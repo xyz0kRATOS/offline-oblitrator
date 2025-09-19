@@ -51,7 +51,7 @@ debug() {
 init_output() {
     mkdir -p "$OUTPUT_DIR"
     chmod 700 "$OUTPUT_DIR"
-
+    
     # Initialize log file
     cat > "$LOG_FILE" << EOF
 # Obliterator Drive Detection Log
@@ -80,9 +80,9 @@ safe_exec() {
     local cmd="$1"
     local description="$2"
     local output
-
+    
     debug "Executing: $cmd"
-
+    
     if output=$(eval "$cmd" 2>&1); then
         debug "$description: Success"
         echo "$output"
@@ -97,14 +97,14 @@ safe_exec() {
 # Get basic block device information
 get_block_devices() {
     log "Detecting block devices..."
-
+    
     local lsblk_output
     if command_exists lsblk; then
         # Get comprehensive device information in JSON format
         lsblk_output=$(safe_exec \
             "lsblk -J -o NAME,MAJ:MIN,RM,SIZE,RO,TYPE,MOUNTPOINT,MODEL,SERIAL,TRAN,SUBSYSTEMS,FSTYPE,LABEL,UUID,PARTUUID" \
             "lsblk JSON output")
-
+        
         echo "$lsblk_output"
     else
         error "lsblk command not available"
@@ -116,30 +116,30 @@ get_block_devices() {
 get_ata_info() {
     local device="$1"
     local info_json="{}"
-
+    
     debug "Getting ATA info for $device"
-
+    
     if command_exists hdparm && [[ -b "$device" ]]; then
         local hdparm_output
         hdparm_output=$(safe_exec "hdparm -I $device" "hdparm identify for $device")
-
+        
         if [[ -n "$hdparm_output" ]]; then
             # Parse hdparm output for key information
             local model serial firmware
             model=$(echo "$hdparm_output" | grep -i "Model Number" | cut -d':' -f2 | xargs || echo "unknown")
             serial=$(echo "$hdparm_output" | grep -i "Serial Number" | cut -d':' -f2 | xargs || echo "unknown")
             firmware=$(echo "$hdparm_output" | grep -i "Firmware Revision" | cut -d':' -f2 | xargs || echo "unknown")
-
+            
             # Check security features
             local security_supported security_enabled security_locked
             security_supported=$(echo "$hdparm_output" | grep -i "Security.*supported" &>/dev/null && echo "true" || echo "false")
             security_enabled=$(echo "$hdparm_output" | grep -i "Security.*enabled" &>/dev/null && echo "true" || echo "false")
             security_locked=$(echo "$hdparm_output" | grep -i "Security.*locked" &>/dev/null && echo "true" || echo "false")
-
+            
             # Check for enhanced security erase
             local enhanced_erase_supported
             enhanced_erase_supported=$(echo "$hdparm_output" | grep -i "enhanced.*erase.*supported" &>/dev/null && echo "true" || echo "false")
-
+            
             # Build JSON
             info_json=$(jq -n \
                 --arg model "$model" \
@@ -162,7 +162,7 @@ get_ata_info() {
                 }')
         fi
     fi
-
+    
     echo "$info_json"
 }
 
@@ -170,21 +170,21 @@ get_ata_info() {
 get_nvme_info() {
     local device="$1"
     local info_json="{}"
-
+    
     debug "Getting NVMe info for $device"
-
+    
     if command_exists nvme && [[ -c "$device" ]]; then
         # Get controller identification
         local nvme_id
         nvme_id=$(safe_exec "nvme id-ctrl $device -o json" "NVMe controller info for $device")
-
+        
         if [[ -n "$nvme_id" && "$nvme_id" != "{}" ]]; then
             # Parse NVMe JSON output
             local model serial firmware
             model=$(echo "$nvme_id" | jq -r '.mn // "unknown"' 2>/dev/null || echo "unknown")
             serial=$(echo "$nvme_id" | jq -r '.sn // "unknown"' 2>/dev/null || echo "unknown")
             firmware=$(echo "$nvme_id" | jq -r '.fr // "unknown"' 2>/dev/null || echo "unknown")
-
+            
             # Check format capabilities
             local format_output crypto_erase_supported="false"
             if format_output=$(safe_exec "nvme id-ns $device -o json" "NVMe namespace info"); then
@@ -193,7 +193,7 @@ get_nvme_info() {
                     crypto_erase_supported="true"
                 fi
             fi
-
+            
             info_json=$(jq -n \
                 --arg model "$model" \
                 --arg serial "$serial" \
@@ -207,7 +207,7 @@ get_nvme_info() {
                 }')
         fi
     fi
-
+    
     echo "$info_json"
 }
 
@@ -215,20 +215,20 @@ get_nvme_info() {
 get_smart_info() {
     local device="$1"
     local smart_json="{}"
-
+    
     debug "Getting SMART info for $device"
-
+    
     if command_exists smartctl; then
         local smart_output
         smart_output=$(safe_exec "smartctl -i -A $device" "SMART info for $device")
-
+        
         if [[ -n "$smart_output" ]]; then
             # Parse SMART output
             local device_model device_serial capacity health
             device_model=$(echo "$smart_output" | grep "Device Model" | cut -d':' -f2 | xargs || echo "unknown")
             device_serial=$(echo "$smart_output" | grep "Serial Number" | cut -d':' -f2 | xargs || echo "unknown")
             capacity=$(echo "$smart_output" | grep "User Capacity" | cut -d':' -f2 | xargs || echo "unknown")
-
+            
             # Check overall health
             local health_status
             if echo "$smart_output" | grep -i "overall.*health.*self.*assessment.*test.*result.*passed" &>/dev/null; then
@@ -238,7 +238,7 @@ get_smart_info() {
             else
                 health_status="UNKNOWN"
             fi
-
+            
             smart_json=$(jq -n \
                 --arg model "$device_model" \
                 --arg serial "$device_serial" \
@@ -252,7 +252,7 @@ get_smart_info() {
                 }')
         fi
     fi
-
+    
     echo "$smart_json"
 }
 
@@ -260,13 +260,13 @@ get_smart_info() {
 get_udev_info() {
     local device="$1"
     local udev_json="{}"
-
+    
     debug "Getting udev info for $device"
-
+    
     if command_exists udevadm; then
         local udev_output
         udev_output=$(safe_exec "udevadm info --query=all --name=$device" "udev info for $device")
-
+        
         if [[ -n "$udev_output" ]]; then
             # Parse key udev properties
             local id_bus id_model id_serial id_type id_fs_type
@@ -275,13 +275,13 @@ get_udev_info() {
             id_serial=$(echo "$udev_output" | grep "ID_SERIAL_SHORT=" | cut -d'=' -f2 || echo "unknown")
             id_type=$(echo "$udev_output" | grep "ID_TYPE=" | cut -d'=' -f2 || echo "unknown")
             id_fs_type=$(echo "$udev_output" | grep "ID_FS_TYPE=" | cut -d'=' -f2 || echo "unknown")
-
+            
             # Check if removable
             local removable="false"
             if echo "$udev_output" | grep "ID_DRIVE_FLASH_SD=1\|ID_DRIVE_FLASH_CF=1\|ID_DRIVE_FLOPPY=1" &>/dev/null; then
                 removable="true"
             fi
-
+            
             udev_json=$(jq -n \
                 --arg bus "$id_bus" \
                 --arg model "$id_model" \
@@ -299,7 +299,7 @@ get_udev_info() {
                 }')
         fi
     fi
-
+    
     echo "$udev_json"
 }
 
@@ -310,42 +310,42 @@ get_recommended_wipe_method() {
     local is_ssd="$3"
     local has_secure_erase="$4"
     local has_crypto_erase="$5"
-
+    
     local method="MULTI_PASS_OVERWRITE"  # Safe default
     local confidence="medium"
     local reason=""
-
+    
     # NVMe SSDs - prefer crypto erase
     if [[ "$device_type" == "nvme" && "$has_crypto_erase" == "true" ]]; then
         method="NVME_CRYPTO_ERASE"
         confidence="high"
         reason="NVMe SSD with cryptographic erase support"
-
+    
     # SATA SSDs with secure erase
     elif [[ "$is_ssd" == "true" && "$has_secure_erase" == "true" ]]; then
         method="ATA_SECURE_ERASE_ENHANCED"
         confidence="high"
         reason="SATA SSD with enhanced secure erase"
-
+    
     # SATA HDDs with secure erase
     elif [[ "$is_ssd" == "false" && "$has_secure_erase" == "true" ]]; then
         method="ATA_SECURE_ERASE"
         confidence="high"
         reason="SATA HDD with secure erase support"
-
+    
     # SSDs without hardware erase (warn about limitations)
     elif [[ "$is_ssd" == "true" ]]; then
         method="MULTI_PASS_OVERWRITE"
         confidence="low"
         reason="SSD without secure erase - multi-pass has limitations"
-
+    
     # Regular HDDs
     else
         method="MULTI_PASS_OVERWRITE"
         confidence="high"
         reason="Standard multi-pass overwrite for HDD"
     fi
-
+    
     jq -n \
         --arg method "$method" \
         --arg confidence "$confidence" \
@@ -360,7 +360,7 @@ get_recommended_wipe_method() {
 # Check if device appears to be an SSD
 is_ssd_device() {
     local device="$1"
-
+    
     # Check rotational characteristic
     local rotational_file="/sys/block/$(basename "$device")/queue/rotational"
     if [[ -f "$rotational_file" ]]; then
@@ -371,13 +371,13 @@ is_ssd_device() {
             return
         fi
     fi
-
+    
     # Check device name patterns
     if [[ "$device" =~ nvme|ssd ]]; then
         echo "true"
         return
     fi
-
+    
     # Default to HDD
     echo "false"
 }
@@ -386,9 +386,9 @@ is_ssd_device() {
 process_drive() {
     local device="$1"
     local device_info="$2"  # JSON from lsblk
-
+    
     log "Processing drive: $device"
-
+    
     # Extract basic info from lsblk JSON
     local name size type model serial tran mountpoint
     name=$(echo "$device_info" | jq -r '.name // "unknown"')
@@ -398,11 +398,11 @@ process_drive() {
     serial=$(echo "$device_info" | jq -r '.serial // "unknown"')
     tran=$(echo "$device_info" | jq -r '.tran // "unknown"')
     mountpoint=$(echo "$device_info" | jq -r '.mountpoint // null')
-
+    
     # Determine device type and interface
     local interface="unknown"
     local device_type="disk"
-
+    
     if [[ "$device" =~ ^/dev/nvme ]]; then
         interface="nvme"
         device_type="nvme"
@@ -415,39 +415,39 @@ process_drive() {
     else
         interface="unknown"
     fi
-
+    
     # Check if SSD
     local is_ssd
     is_ssd=$(is_ssd_device "$device")
-
+    
     # Get detailed information based on interface
     local ata_info nvme_info smart_info udev_info
     ata_info="{}"
     nvme_info="{}"
-
+    
     if [[ "$interface" == "sata" ]]; then
         ata_info=$(get_ata_info "$device")
     elif [[ "$interface" == "nvme" ]]; then
         nvme_info=$(get_nvme_info "$device")
     fi
-
+    
     smart_info=$(get_smart_info "$device")
     udev_info=$(get_udev_info "$device")
-
+    
     # Determine capabilities
     local has_secure_erase="false"
     local has_crypto_erase="false"
-
+    
     if [[ "$interface" == "sata" ]]; then
         has_secure_erase=$(echo "$ata_info" | jq -r '.security.supported // false')
     elif [[ "$interface" == "nvme" ]]; then
         has_crypto_erase=$(echo "$nvme_info" | jq -r '.crypto_erase_supported // false')
     fi
-
+    
     # Get recommended wipe method
     local recommended_method
     recommended_method=$(get_recommended_wipe_method "$device" "$device_type" "$is_ssd" "$has_secure_erase" "$has_crypto_erase")
-
+    
     # Check if mounted (security warning)
     local mounted="false"
     local mount_warning=""
@@ -455,7 +455,7 @@ process_drive() {
         mounted="true"
         mount_warning="WARNING: Device is currently mounted at $mountpoint"
     fi
-
+    
     # Build complete drive information JSON
     local drive_json
     drive_json=$(jq -n \
@@ -491,33 +491,33 @@ process_drive() {
             udev_info: $udev_info,
             recommended_method: $recommended
         }')
-
+    
     echo "$drive_json"
 }
 
 # Generate human-readable report
 generate_human_report() {
     local drives_json="$1"
-
+    
     cat > "$DRIVES_HUMAN" << EOF
 # Obliterator Drive Detection Report
 # Generated: $(date -Iseconds)
 # System: $(uname -a)
 
 EOF
-
+    
     local drive_count
     drive_count=$(echo "$drives_json" | jq '.drives | length')
-
+    
     echo "Detected $drive_count storage device(s):" >> "$DRIVES_HUMAN"
     echo "" >> "$DRIVES_HUMAN"
-
+    
     # Process each drive for human report
     local i=0
     while [[ $i -lt $drive_count ]]; do
         local drive
         drive=$(echo "$drives_json" | jq ".drives[$i]")
-
+        
         local device name size interface model recommended_method
         device=$(echo "$drive" | jq -r '.device')
         name=$(echo "$drive" | jq -r '.name')
@@ -525,7 +525,7 @@ EOF
         interface=$(echo "$drive" | jq -r '.interface')
         model=$(echo "$drive" | jq -r '.model')
         recommended_method=$(echo "$drive" | jq -r '.recommended_method.method')
-
+        
         cat >> "$DRIVES_HUMAN" << EOF
 Device $((i+1)): $device
   Name: $name
@@ -533,9 +533,9 @@ Device $((i+1)): $device
   Interface: $interface
   Model: $model
   Recommended Method: $recommended_method
-
+  
 EOF
-
+        
         # Add warnings if mounted
         local mounted mount_warning
         mounted=$(echo "$drive" | jq -r '.mounted')
@@ -544,10 +544,10 @@ EOF
             echo "  ⚠️  $mount_warning" >> "$DRIVES_HUMAN"
             echo "" >> "$DRIVES_HUMAN"
         fi
-
+        
         ((i++))
     done
-
+    
     cat >> "$DRIVES_HUMAN" << EOF
 
 # Safety Notes:
@@ -567,40 +567,40 @@ EOF
 # Main detection function
 main() {
     log "Starting Obliterator drive detection v$VERSION"
-
+    
     # Initialize
     init_output
     check_privileges
-
+    
     # Get block devices
     local lsblk_output
     if ! lsblk_output=$(get_block_devices); then
         error "Failed to get block device information"
         exit 1
     fi
-
+    
     # Parse block devices and filter for disks
     local devices
     devices=$(echo "$lsblk_output" | jq -r '.blockdevices[] | select(.type == "disk") | .name')
-
+    
     if [[ -z "$devices" ]]; then
         warn "No disk devices found"
         echo '{"drives": [], "timestamp": "'$(date -Iseconds)'", "version": "'$VERSION'"}' > "$DRIVES_JSON"
         exit 0
     fi
-
+    
     log "Found disk devices: $(echo "$devices" | tr '\n' ' ')"
-
+    
     # Process each device
     local all_drives="[]"
-
+    
     while IFS= read -r device_name; do
         if [[ -z "$device_name" ]]; then continue; fi
-
+        
         local full_device="/dev/$device_name"
         local device_info
         device_info=$(echo "$lsblk_output" | jq ".blockdevices[] | select(.name == \"$device_name\")")
-
+        
         if [[ -n "$device_info" && "$device_info" != "null" ]]; then
             local drive_result
             if drive_result=$(process_drive "$full_device" "$device_info"); then
@@ -610,7 +610,7 @@ main() {
             fi
         fi
     done <<< "$devices"
-
+    
     # Build final JSON output
     local final_json
     final_json=$(jq -n \
@@ -628,30 +628,30 @@ main() {
                 system: $system
             }
         }')
-
+    
     # Write outputs
     echo "$final_json" | jq '.' > "$DRIVES_JSON"
     generate_human_report "$final_json"
-
+    
     local drive_count
     drive_count=$(echo "$final_json" | jq '.drives | length')
-
+    
     log "Detection complete - found $drive_count drive(s)"
     log "JSON output: $DRIVES_JSON"
     log "Human report: $DRIVES_HUMAN"
     log "Log file: $LOG_FILE"
-
+    
     # Display summary
     if [[ "${QUIET:-false}" != "true" ]]; then
         echo ""
         echo "=== DRIVE DETECTION SUMMARY ==="
         echo "Drives found: $drive_count"
-
+        
         if [[ $drive_count -gt 0 ]]; then
             echo ""
             echo "Devices:"
             echo "$final_json" | jq -r '.drives[] | "  \(.device) - \(.size) \(.interface) \(.model)"'
-
+            
             echo ""
             echo "Warnings:"
             local mounted_count
@@ -663,7 +663,7 @@ main() {
                 echo "  - No mounted devices detected"
             fi
         fi
-
+        
         echo ""
         echo "Output files:"
         echo "  JSON: $DRIVES_JSON"
@@ -733,4 +733,3 @@ esac
 
 # Run main function
 main "$@"
-
