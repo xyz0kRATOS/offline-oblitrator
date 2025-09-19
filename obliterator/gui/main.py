@@ -742,10 +742,6 @@ Type 'I UNDERSTAND AND CONFIRM WIPE' to proceed:"""
         """Execute wipe operation in background thread"""
         try:
             results = {}
-    def _execute_wipe_background(self):
-        """Execute wipe operation in background thread"""
-        try:
-            results = {}
             total_drives = len(self.selected_drives)
 
             for i, device in enumerate(self.selected_drives):
