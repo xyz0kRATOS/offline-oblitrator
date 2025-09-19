@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Obliterator GUI - Main Application
-Secure air-gapped data wiping interface
+Obliterator GUI - Modern CustomTkinter Interface
+Secure air-gapped data wiping with contemporary design
 Version: 1.0.0
 """
 
@@ -15,10 +15,623 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 
-# GUI imports with fallback handling
+# GUI imports with modern CustomTkinter
 try:
+    import customtkinter as ctk
+    from tkinter import messagebox, filedialog, scrolledtext
     import tkinter as tk
-    from tkinter import ttk, messagebox, filedialog, scrolledtext
+    CTK_AVAILABLE = True
+    
+    # Configure CustomTkinter
+    ctk.set_appearance_mode("dark")
+    ctk.set_default_color_theme("blue")
+    
+    print("✅ CustomTkinter loaded successfully")
+    
+except ImportError:
+    print("❌ CustomTkinter not available. Install with: pip install customtkinter")
+    try:
+        import tkinter as tk
+        from tkinter import ttk, messagebox, filedialog, scrolledtext
+        CTK_AVAILABLE = False
+        print("⚠️  Using fallback tkinter")
+    except ImportError:
+        print("❌ No GUI libraries available")
+        sys.exit(1)
+
+# Configuration
+APP_VERSION = "1.0.0"
+APP_NAME = "Obliterator"
+OUTPUT_DIR = os.environ.get("OBLITERATOR_OUTPUT_DIR", "/tmp/obliterator")
+SCRIPTS_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+class ModernObliperatorGUI:
+    """Modern CustomTkinter GUI for Obliterator"""
+    
+    def __init__(self):
+        self.root = None
+        self.current_frame = None
+        
+        # Application state
+        self.detected_drives = []
+        self.selected_drives = []
+        self.operator_info = {}
+        self.wipe_in_progress = False
+        self.wipe_results = {}
+        
+        # GUI components
+        self.drive_frame = None
+        self.progress_bars = {}
+        self.log_text = None
+        
+        # Modern colors
+        self.colors = {
+            "primary": "#6a0d83",      # Deep purple
+            "secondary": "#1a1a2e",    # Dark navy
+            "accent": "#00d4ff",       # Bright cyan
+            "success": "#00ff88",      # Bright green
+            "warning": "#ffcc00",      # Gold
+            "error": "#ff4757",        # Red
+            "surface": "#16213e",      # Surface color
+            "text": "#ffffff",         # White text
+            "text_dim": "#b8b8b8"      # Dim text
+        }
+        
+        # Initialize output directory
+        os.makedirs(OUTPUT_DIR, exist_ok=True)
+        
+    def setup_root_window(self):
+        """Initialize the modern main window"""
+        if CTK_AVAILABLE:
+            self.root = ctk.CTk()
+            
+            # Modern window configuration
+            self.root.title(f"{APP_NAME} • Modern Security Suite")
+            self.root.geometry("1400x900")
+            self.root.minsize(1200, 800)
+            
+            # Modern color scheme
+            self.root.configure(fg_color=self.colors["secondary"])
+            
+        else:
+            self.root = tk.Tk()
+            self.root.title(f"{APP_NAME} v{APP_VERSION}")
+            self.root.geometry("1200x800")
+            self.root.configure(bg=self.colors["secondary"])
+        
+        # Center window
+        self.center_window()
+        
+        # Handle window close
+        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
+        
+    def center_window(self):
+        """Center the window on screen"""
+        self.root.update_idletasks()
+        width = self.root.winfo_width()
+        height = self.root.winfo_height()
+        x = (self.root.winfo_screenwidth() // 2) - (width // 2)
+        y = (self.root.winfo_screenheight() // 2) - (height // 2)
+        self.root.geometry(f"{width}x{height}+{x}+{y}")
+        
+    def show_splash_screen(self):
+        """Modern splash screen with animations"""
+        if CTK_AVAILABLE:
+            splash_frame = ctk.CTkFrame(self.root, fg_color=self.colors["secondary"])
+        else:
+            splash_frame = tk.Frame(self.root, bg=self.colors["secondary"])
+        
+        splash_frame.pack(fill="both", expand=True)
+        
+        # Modern title with gradient effect
+        if CTK_AVAILABLE:
+            title_label = ctk.CTkLabel(
+                splash_frame,
+                text=APP_NAME,
+                font=("SF Pro Display", 72, "bold"),
+                text_color=self.colors["primary"]
+            )
+            title_label.pack(pady=(200, 20))
+            
+            subtitle_label = ctk.CTkLabel(
+                splash_frame,
+                text="Advanced Security • Air-Gapped • Forensics-Grade",
+                font=("SF Pro Display", 18),
+                text_color=self.colors["accent"]
+            )
+            subtitle_label.pack(pady=(0, 40))
+            
+            version_label = ctk.CTkLabel(
+                splash_frame,
+                text=f"Version {APP_VERSION} • NIST SP 800-88r2 Compliant",
+                font=("SF Pro Display", 14),
+                text_color=self.colors["text_dim"]
+            )
+            version_label.pack(pady=(0, 60))
+            
+            # Modern loading indicator
+            loading_label = ctk.CTkLabel(
+                splash_frame,
+                text="🔍 Initializing secure environment...",
+                font=("SF Pro Display", 16),
+                text_color=self.colors["accent"]
+            )
+            loading_label.pack(pady=(0, 30))
+            
+            # Modern progress bar
+            progress = ctk.CTkProgressBar(
+                splash_frame,
+                width=400,
+                height=8,
+                progress_color=self.colors["primary"],
+                fg_color=self.colors["surface"]
+            )
+            progress.pack(pady=(0, 100))
+            progress.start()
+            
+        else:
+            # Fallback for standard tkinter
+            title_label = tk.Label(
+                splash_frame,
+                text=APP_NAME,
+                font=("Arial", 48, "bold"),
+                bg=self.colors["secondary"],
+                fg=self.colors["primary"]
+            )
+            title_label.pack(pady=(150, 20))
+        
+        self.switch_frame(splash_frame)
+        self.root.update()
+        
+        # Simulate loading time
+        time.sleep(2)
+        
+        if CTK_AVAILABLE:
+            progress.stop()
+            
+        # Check for root privileges
+        if os.geteuid() != 0:
+            self.show_login_screen()
+        else:
+            self.detect_drives_and_show_main()
+            
+    def show_login_screen(self):
+        """Modern login/access screen"""
+        if CTK_AVAILABLE:
+            login_frame = ctk.CTkFrame(self.root, fg_color=self.colors["secondary"])
+        else:
+            login_frame = tk.Frame(self.root, bg=self.colors["secondary"])
+        
+        login_frame.pack(fill="both", expand=True)
+        
+        # Modern warning card
+        if CTK_AVAILABLE:
+            warning_card = ctk.CTkFrame(
+                login_frame,
+                fg_color=self.colors["surface"],
+                corner_radius=20,
+                border_width=2,
+                border_color=self.colors["warning"]
+            )
+            warning_card.pack(pady=100, padx=100, fill="both", expand=True)
+            
+            # Icon and title
+            title_label = ctk.CTkLabel(
+                warning_card,
+                text="🔐 Administrator Access Required",
+                font=("SF Pro Display", 28, "bold"),
+                text_color=self.colors["warning"]
+            )
+            title_label.pack(pady=(40, 20))
+            
+            # Modern info text
+            info_text = """This application requires administrator privileges for direct storage device access.
+            
+For security operations, please restart with elevated permissions:
+
+sudo python3 main.py
+
+Alternatively, you can run individual components with appropriate permissions."""
+            
+            info_label = ctk.CTkLabel(
+                warning_card,
+                text=info_text,
+                font=("SF Pro Display", 14),
+                text_color=self.colors["text"],
+                justify="center"
+            )
+            info_label.pack(pady=(0, 40), padx=40)
+            
+            # Modern button container
+            button_container = ctk.CTkFrame(warning_card, fg_color="transparent")
+            button_container.pack(pady=(20, 40))
+            
+            # Modern buttons
+            exit_btn = ctk.CTkButton(
+                button_container,
+                text="Exit Application",
+                command=self.on_closing,
+                fg_color=self.colors["error"],
+                hover_color="#ff6b7a",
+                font=("SF Pro Display", 14, "bold"),
+                height=40,
+                width=160
+            )
+            exit_btn.pack(side="left", padx=10)
+            
+            continue_btn = ctk.CTkButton(
+                button_container,
+                text="Continue Anyway",
+                command=self.detect_drives_and_show_main,
+                fg_color=self.colors["primary"],
+                hover_color="#8b2ca0",
+                font=("SF Pro Display", 14, "bold"),
+                height=40,
+                width=160
+            )
+            continue_btn.pack(side="left", padx=10)
+            
+        self.switch_frame(login_frame)
+        
+    def show_main_screen(self):
+        """Modern main interface with cards and modern layout"""
+        if CTK_AVAILABLE:
+            main_frame = ctk.CTkFrame(self.root, fg_color=self.colors["secondary"])
+        else:
+            main_frame = tk.Frame(self.root, bg=self.colors["secondary"])
+        
+        main_frame.pack(fill="both", expand=True, padx=20, pady=20)
+        
+        # Modern header
+        self.create_modern_header(main_frame)
+        
+        # Main content area
+        if CTK_AVAILABLE:
+            content_frame = ctk.CTkFrame(main_frame, fg_color="transparent")
+        else:
+            content_frame = tk.Frame(main_frame, bg=self.colors["secondary"])
+        content_frame.pack(fill="both", expand=True, pady=(20, 0))
+        
+        # Check if we have drives or show error message
+        if not self.detected_drives:
+            self.create_modern_no_drives_section(content_frame)
+        else:
+            self.create_modern_drive_section(content_frame)
+        
+        self.switch_frame(main_frame)
+        
+    def create_modern_header(self, parent):
+        """Create modern header with system info"""
+        if CTK_AVAILABLE:
+            header_frame = ctk.CTkFrame(
+                parent,
+                height=80,
+                fg_color=self.colors["surface"],
+                corner_radius=15
+            )
+        else:
+            header_frame = tk.Frame(parent, bg=self.colors["surface"], height=80)
+        
+        header_frame.pack(fill="x", pady=(0, 20))
+        header_frame.pack_propagate(False)
+        
+        # Left side - App branding
+        if CTK_AVAILABLE:
+            left_frame = ctk.CTkFrame(header_frame, fg_color="transparent")
+            left_frame.pack(side="left", fill="y", padx=20)
+            
+            title_label = ctk.CTkLabel(
+                left_frame,
+                text=f"🛡️ {APP_NAME}",
+                font=("SF Pro Display", 24, "bold"),
+                text_color=self.colors["primary"]
+            )
+            title_label.pack(anchor="w", pady=(15, 5))
+            
+            subtitle_label = ctk.CTkLabel(
+                left_frame,
+                text="Forensics-Grade Data Destruction",
+                font=("SF Pro Display", 12),
+                text_color=self.colors["text_dim"]
+            )
+            subtitle_label.pack(anchor="w")
+            
+            # Right side - System info
+            right_frame = ctk.CTkFrame(header_frame, fg_color="transparent")
+            right_frame.pack(side="right", fill="y", padx=20)
+            
+            import socket
+            hostname = socket.gethostname()
+            current_time = datetime.now().strftime("%H:%M:%S")
+            
+            sys_label = ctk.CTkLabel(
+                right_frame,
+                text=f"System: {hostname}\nTime: {current_time}\nVersion: {APP_VERSION}",
+                font=("SF Pro Mono", 10),
+                text_color=self.colors["text_dim"],
+                justify="right"
+            )
+            sys_label.pack(anchor="e", pady=15)
+            
+    def create_modern_drive_section(self, parent):
+        """Create modern drive list with cards"""
+        # Section title
+        if CTK_AVAILABLE:
+            title_frame = ctk.CTkFrame(parent, fg_color="transparent")
+            title_frame.pack(fill="x", pady=(0, 20))
+            
+            title_label = ctk.CTkLabel(
+                title_frame,
+                text="📀 Storage Devices",
+                font=("SF Pro Display", 20, "bold"),
+                text_color=self.colors["text"]
+            )
+            title_label.pack(side="left")
+            
+            count_label = ctk.CTkLabel(
+                title_frame,
+                text=f"{len(self.detected_drives)} devices detected",
+                font=("SF Pro Display", 12),
+                text_color=self.colors["text_dim"]
+            )
+            count_label.pack(side="left", padx=(15, 0))
+            
+            # Refresh button
+            refresh_btn = ctk.CTkButton(
+                title_frame,
+                text="🔄 Refresh",
+                command=self.refresh_drives,
+                fg_color=self.colors["accent"],
+                hover_color="#00b8e6",
+                font=("SF Pro Display", 12, "bold"),
+                height=32,
+                width=100
+            )
+            refresh_btn.pack(side="right")
+            
+        # Scrollable drive container
+        if CTK_AVAILABLE:
+            self.drive_frame = ctk.CTkScrollableFrame(
+                parent,
+                fg_color=self.colors["surface"],
+                corner_radius=15
+            )
+        else:
+            self.drive_frame = tk.Frame(parent, bg=self.colors["surface"])
+        
+        self.drive_frame.pack(fill="both", expand=True, pady=(0, 20))
+        
+        # Populate with drive cards
+        self.populate_drive_cards()
+        
+        # Action buttons
+        if CTK_AVAILABLE:
+            action_frame = ctk.CTkFrame(parent, fg_color="transparent")
+            action_frame.pack(fill="x")
+            
+            wipe_btn = ctk.CTkButton(
+                action_frame,
+                text="⚠️ WIPE SELECTED DEVICES",
+                command=self.confirm_wipe,
+                fg_color=self.colors["error"],
+                hover_color="#ff6b7a",
+                font=("SF Pro Display", 16, "bold"),
+                height=50,
+                width=300
+            )
+            wipe_btn.pack(side="right")
+            
+            selected_label = ctk.CTkLabel(
+                action_frame,
+                text=f"{len(self.selected_drives)} devices selected",
+                font=("SF Pro Display", 12),
+                text_color=self.colors["text_dim"]
+            )
+            selected_label.pack(side="left", pady=15)
+            
+    def populate_drive_cards(self):
+        """Create modern drive cards"""
+        for i, drive in enumerate(self.detected_drives):
+            self.create_drive_card(drive, i)
+            
+    def create_drive_card(self, drive, index):
+        """Create a modern drive card"""
+        if not CTK_AVAILABLE:
+            return
+            
+        # Drive card container
+        card = ctk.CTkFrame(
+            self.drive_frame,
+            fg_color=self.colors["secondary"],
+            corner_radius=12,
+            border_width=1,
+            border_color=self.colors["surface"]
+        )
+        card.pack(fill="x", padx=10, pady=5)
+        
+        # Card content
+        content_frame = ctk.CTkFrame(card, fg_color="transparent")
+        content_frame.pack(fill="both", expand=True, padx=15, pady=15)
+        
+        # Top row - Device info and selection
+        top_row = ctk.CTkFrame(content_frame, fg_color="transparent")
+        top_row.pack(fill="x", pady=(0, 10))
+        
+        # Selection checkbox
+        var = tk.BooleanVar()
+        checkbox = ctk.CTkCheckBox(
+            top_row,
+            text="",
+            variable=var,
+            command=lambda: self.toggle_drive_selection(drive, var.get()),
+            fg_color=self.colors["primary"],
+            hover_color=self.colors["accent"]
+        )
+        checkbox.pack(side="left")
+        
+        # Device icon and name
+        device_icon = "💾" if drive.get("interface") == "nvme" else "💿" if drive.get("is_ssd") else "🖴"
+        device_label = ctk.CTkLabel(
+            top_row,
+            text=f"{device_icon} {drive.get('device', 'unknown')}",
+            font=("SF Pro Display", 16, "bold"),
+            text_color=self.colors["text"]
+        )
+        device_label.pack(side="left", padx=(15, 0))
+        
+        # Status badges
+        if drive.get("mounted"):
+            status_badge = ctk.CTkLabel(
+                top_row,
+                text="🔴 MOUNTED",
+                font=("SF Pro Display", 10, "bold"),
+                text_color=self.colors["error"]
+            )
+            status_badge.pack(side="right")
+            
+        # Device details grid
+        details_frame = ctk.CTkFrame(content_frame, fg_color="transparent")
+        details_frame.pack(fill="x")
+        
+        # Configure grid
+        details_frame.grid_columnconfigure(0, weight=1)
+        details_frame.grid_columnconfigure(1, weight=1)
+        details_frame.grid_columnconfigure(2, weight=1)
+        
+        # Model
+        model_label = ctk.CTkLabel(
+            details_frame,
+            text=f"Model: {drive.get('model', 'Unknown')}",
+            font=("SF Pro Display", 11),
+            text_color=self.colors["text_dim"],
+            anchor="w"
+        )
+        model_label.grid(row=0, column=0, sticky="w", pady=2)
+        
+        # Size
+        size_label = ctk.CTkLabel(
+            details_frame,
+            text=f"Size: {drive.get('size', 'Unknown')}",
+            font=("SF Pro Display", 11),
+            text_color=self.colors["text_dim"],
+            anchor="w"
+        )
+        size_label.grid(row=0, column=1, sticky="w", pady=2)
+        
+        # Type
+        type_label = ctk.CTkLabel(
+            details_frame,
+            text=f"Type: {drive.get('type', 'Unknown')}",
+            font=("SF Pro Display", 11),
+            text_color=self.colors["text_dim"],
+            anchor="w"
+        )
+        type_label.grid(row=0, column=2, sticky="w", pady=2)
+        
+        # Recommended method
+        method = drive.get('recommended_method', {}).get('method', 'UNKNOWN')
+        method_label = ctk.CTkLabel(
+            details_frame,
+            text=f"Recommended: {method}",
+            font=("SF Pro Display", 11, "bold"),
+            text_color=self.colors["accent"],
+            anchor="w"
+        )
+        method_label.grid(row=1, column=0, columnspan=3, sticky="w", pady=(5, 0))
+        
+    def toggle_drive_selection(self, drive, selected):
+        """Handle drive selection"""
+        device = drive.get('device')
+        if selected and device not in self.selected_drives:
+            self.selected_drives.append(device)
+        elif not selected and device in self.selected_drives:
+            self.selected_drives.remove(device)
+            
+        print(f"Drive {device} {'selected' if selected else 'deselected'}")
+        
+    def create_modern_no_drives_section(self, parent):
+        """Modern no drives found screen"""
+        if CTK_AVAILABLE:
+            # Center container
+            container = ctk.CTkFrame(
+                parent,
+                fg_color=self.colors["surface"],
+                corner_radius=20,
+                border_width=2,
+                border_color=self.colors["warning"]
+            )
+            container.pack(expand=True, fill="both", padx=100, pady=50)
+            
+            # Icon and title
+            title_label = ctk.CTkLabel(
+                container,
+                text="🔍 No Storage Devices Detected",
+                font=("SF Pro Display", 24, "bold"),
+                text_color=self.colors["warning"]
+            )
+            title_label.pack(pady=(40, 20))
+            
+            # Info text
+            info_text = """This could be due to:
+• Running without administrator privileges
+• No storage devices connected
+• System compatibility issues
+
+Try these solutions:
+• Restart with: sudo python3 main.py
+• Check device connections
+• Run manual detection"""
+            
+            info_label = ctk.CTkLabel(
+                container,
+                text=info_text,
+                font=("SF Pro Display", 12),
+                text_color=self.colors["text"],
+                justify="left"
+            )
+            info_label.pack(pady=(0, 30))
+            
+            # Action buttons
+            button_container = ctk.CTkFrame(container, fg_color="transparent")
+            button_container.pack(pady=(20, 40))
+            
+            refresh_btn = ctk.CTkButton(
+                button_container,
+                text="🔄 Refresh Devices",
+                command=self.refresh_drives,
+                fg_color=self.colors["accent"],
+                hover_color="#00b8e6",
+                font=("SF Pro Display", 14, "bold"),
+                height=40,
+                width=160
+            )
+            refresh_btn.pack(side="left", padx=10)
+            
+            debug_btn = ctk.CTkButton(
+                button_container,
+                text="🔧 Debug Info",
+                command=self.run_debug_detection,
+                fg_color=self.colors["primary"],
+                hover_color="#8b2ca0",
+                font=("SF Pro Display", 14, "bold"),
+                height=40,
+                width=160
+            )
+            debug_btn.pack(side="left", padx=10)
+            
+            mock_btn = ctk.CTkButton(
+                button_container,
+                text="📝 Test Mode",
+                command=self.load_mock_data,
+                fg_color=self.colors["surface"],
+                hover_color="#2a3441",
+                font=("SF Pro Display", 14, "bold"),
+                height=40,
+                width=160,
+                border_width=1,
+                border_color=self.colors["text_dim"]
+            )
+            mock_btn.pack(side="left", padx=10) ttk, messagebox, filedialog, scrolledtext
     GUI_AVAILABLE = True
 except ImportError:
     print("ERROR: tkinter not available. Install python3-tk package.")
