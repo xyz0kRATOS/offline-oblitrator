@@ -15,11 +15,15 @@ echo "Installing core wiping utilities..."
 # coreutils: Provides critical commands like 'dd' and 'shred'
 # util-linux: Provides 'blockdev'
 # pv: Provides the pipe viewer for the progress bar
-apt-get install -y hdparm nvme-cli smartmontools coreutils util-linux pv
+apt-get install -y hdparm nvme-cli smartmontools coreutils util-linux pv dmidecode
 
 # 3. Install Python Environment and GUI Toolkit
 echo "Installing Python and GUI tools..."
 apt-get install -y python3 python3-pip python3-tk
+
+echo "Installing Python and GUI tools..."
+# python3-pil & python3-pil.imagetk are required for logo support
+apt-get install -y python3 python3-pip python3-tk python3-pil python3-pil.imagetk
 
 # 4. Install Required Python Libraries
 echo "Installing Python libraries..."
