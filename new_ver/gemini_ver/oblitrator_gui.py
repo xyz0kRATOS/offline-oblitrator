@@ -143,25 +143,35 @@ class App(customtkinter.CTk):
         """Clears and repopulates the device list in the GUI."""
         for widget in self.device_frame.winfo_children():
             widget.destroy()
-
+    
         self.device_widgets.clear()
         devices = self.detect_devices()
-
+    
         if not devices:
             label = customtkinter.CTkLabel(self.device_frame, text="No storage devices found.")
             label.pack(pady=20)
             return
-
+    
         header = f"{'Select':<8} {'Device':<12} {'Model':<30} {'Serial':<25} {'Size':<10}"
         header_label = customtkinter.CTkLabel(self.device_frame, text=header, font=("monospace", 12))
         header_label.pack(fill="x", padx=10)
-
+    
         for dev in devices:
             dev_path = f"/dev/{dev.get('name', 'N/A')}"
             var = tkinter.BooleanVar()
+            
+            # --- THIS IS THE CORRECTED LINE ---
+            # We use (dev.get(...) or 'N/A') to handle cases where the value is None
+            display_text = (
+                f"{dev_path:<12} "
+                f"{(dev.get('model') or 'N/A'):<30} "
+                f"{(dev.get('serial') or 'N/A'):<25} "
+                f"{(dev.get('size') or 'N/A'):<10}"
+            )
+    
             checkbox = customtkinter.CTkCheckBox(
                 self.device_frame,
-                text=f"{dev_path:<12} {dev.get('model', 'N/A'):<30} {dev.get('serial', 'N/A'):<25} {dev.get('size', 'N/A'):<10}",
+                text=display_text,  # Use the safe display_text variable
                 variable=var,
                 font=("monospace", 12),
                 command=self.update_selection_status
