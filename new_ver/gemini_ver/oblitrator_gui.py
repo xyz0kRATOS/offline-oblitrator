@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# obliterator_gui.py - (Version 3.1 - Working Splash Screen)
+# obliterator_gui.py - (Version 3.2 - Guaranteed Splash Screen)
 # GUI for the Obliterator Secure Wipe Tool
 
 import tkinter
@@ -17,31 +17,36 @@ from cryptography.hazmat.primitives.asymmetric import padding
 
 # --- Configuration ---
 APP_NAME = "Obliterator"
-APP_VERSION = "3.1-final"
+APP_VERSION = "3.2-final"
 THEME_COLOR = "dark-blue"
 PRIVATE_KEY_PATH = "/mnt/home/obliterator/keys/private_key.pem"
 CERT_DIR = "/mnt/home/obliterator/certificates/"
 WIPE_SCRIPT_PATH = "/mnt/home/obliterator/wipe_disk.sh"
 
-# --- Splash Screen Window ---
+# --- [NEW] Splash Screen with Logo ---
 class SplashScreen(customtkinter.CTkToplevel):
     def __init__(self, parent):
         super().__init__(parent)
         self.title("Obliterator")
-        self.geometry("400x200")
+        self.geometry("400x250")
         self.overrideredirect(True)
 
+        # Center the splash screen
         parent.update_idletasks()
         parent_x = parent.winfo_x()
         parent_y = parent.winfo_y()
         parent_width = parent.winfo_width()
         parent_height = parent.winfo_height()
-        self.geometry(f"+{parent_x + parent_width // 2 - 200}+{parent_y + parent_height // 2 - 100}")
+        self.geometry(f"+{parent_x + parent_width // 2 - 200}+{parent_y + parent_height // 2 - 125}")
+
+        # Simple shield logo
+        logo_label = customtkinter.CTkLabel(self, text="🛡️", font=("Roboto", 60))
+        logo_label.pack(pady=(30, 0))
 
         main_label = customtkinter.CTkLabel(self, text=APP_NAME, font=("Roboto", 40, "bold"))
-        main_label.pack(pady=40, padx=20)
+        main_label.pack(pady=10)
         
-        status_label = customtkinter.CTkLabel(self, text="Initializing and detecting devices...", font=("Roboto", 12))
+        status_label = customtkinter.CTkLabel(self, text="Initializing Secure Environment...", font=("Roboto", 12))
         status_label.pack(pady=10)
 
         self.lift()
@@ -99,13 +104,17 @@ class ConfirmationDialog(customtkinter.CTkToplevel):
 class App(customtkinter.CTk):
     def __init__(self):
         super().__init__()
-        self.withdraw() # Hide main window initially
-        
-        splash = SplashScreen(self)
-        # --- THIS IS THE FIX ---
-        # Force the GUI to draw the splash screen before continuing
-        splash.update()
+        self.withdraw() # Hide main window
 
+        # --- THIS IS THE NEW, CORRECT LOGIC ---
+        # 1. Create the splash screen
+        self.splash = SplashScreen(self)
+
+        # 2. Schedule the main window setup to run after 3 seconds (3000ms)
+        self.after(3000, self.setup_main_window)
+
+    def setup_main_window(self):
+        """This function builds the main UI and is called after the splash screen delay."""
         self.title(APP_NAME)
         self.geometry("800x600")
         customtkinter.set_appearance_mode("Dark")
@@ -148,8 +157,9 @@ class App(customtkinter.CTk):
 
         self.populate_devices()
 
-        splash.destroy()
-        self.deiconify() # Show main window
+        # 3. Destroy splash screen and show the main window
+        self.splash.destroy()
+        self.deiconify()
 
     def log(self, message):
         self.log_textbox.configure(state="normal")
