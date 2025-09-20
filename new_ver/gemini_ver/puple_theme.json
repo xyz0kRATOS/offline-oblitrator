@@ -57,6 +57,14 @@
     "text_color": ["#DCE4EE", "#DCE4EE"],
     "text_color_disabled": ["#99929e", "#99929e"]
   },
+  "DropdownMenu": {
+    "corner_radius": 6,
+    "border_width": 2,
+    "fg_color": ["#423a4a", "#423a4a"],
+    "hover_color": ["#84629c", "#84629c"],
+    "border_color": ["#5a5263", "#5a5263"],
+    "text_color": ["#DCE4EE", "#DCE4EE"]
+  },
   "CTkProgressBar": {
     "corner_radius": 1000,
     "border_width": 0,
@@ -93,6 +101,8 @@
     "fg_color": ["#2e2833", "#2e2833"],
     "border_color": ["#5a5263", "#5a5263"],
     "text_color": ["#DCE4EE", "#DCE4EE"]
+    "scrollbar_button_color":"#5a5263",
+    "scrollbar_button_hover_color":"#705185"
   },
   "CTkTabview": {
     "corner_radius": 10,
