@@ -9,12 +9,10 @@ import datetime
 import os
 import threading
 
-# Import crypto libraries for signing
-from Crypto.PublicKey import RSA
-from Crypto.Signature import pkcs1_15
-from Crypto.Hash import SHA256
 import base64
 
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import padding
 # --- Configuration ---
 APP_NAME = "Obliterator"
 APP_VERSION = "1.0-prototype"
@@ -241,10 +239,12 @@ class App(customtkinter.CTk):
         self.refresh_button.configure(state="normal")
         self.populate_devices() # Refresh list
 
+    # Make sure to add these new imports at the top of your obliterator_gui.py file
+
     def generate_certificate(self, device_data):
         timestamp = datetime.datetime.now(datetime.timezone.utc).isoformat()
         serial = device_data.get('serial', 'UNKNOWN_SERIAL')
-
+        
         cert = {
             "iss": APP_NAME,
             "ver": APP_VERSION,
@@ -257,7 +257,7 @@ class App(customtkinter.CTk):
             },
             "sanitization": {
                 "method": "Clear",
-                "technique": "5-Pass Overwrite", # Should be dynamic in a full version
+                "technique": "5-Pass Overwrite",
                 "status": "Success"
             },
             "verification": {
@@ -265,35 +265,43 @@ class App(customtkinter.CTk):
                 "status": "Success"
             }
         }
-
-        # Sign the certificate
+        
+        # Sign the certificate using the new 'cryptography' library
         try:
-            with open(PRIVATE_KEY_PATH, 'r') as f:
-                key = RSA.import_key(f.read())
-
-            h = SHA256.new(json.dumps(cert, sort_keys=True).encode('utf-8'))
-            signature = pkcs1_15.new(key).sign(h)
-
+            with open(PRIVATE_KEY_PATH, 'rb') as f: # Open key in binary mode 'rb'
+                private_key = serialization.load_pem_private_key(
+                    f.read(),
+                    password=None,
+                )
+            
+            # The data that gets signed must be bytes
+            json_payload_bytes = json.dumps(cert, sort_keys=True).encode('utf-8')
+    
+            signature = private_key.sign(
+                json_payload_bytes,
+                padding.PKCS1v15(),
+                hashes.SHA256()
+            )
+            
             signed_cert_container = {
                 "payload": cert,
                 "signature": base64.b64encode(signature).decode('utf-8')
             }
-
+            
             # Save to file
             filename = f"wipe-{datetime.datetime.now():%Y%m%d-%H%M%S}-{serial}.json"
             filepath = os.path.join(CERT_DIR, filename)
-
+            
             if not os.path.exists(CERT_DIR):
                 os.makedirs(CERT_DIR)
-
+                
             with open(filepath, 'w') as f:
                 json.dump(signed_cert_container, f, indent=4)
-
+                
             self.log(f"Certificate saved to {filepath}")
-
+            
         except Exception as e:
             self.log(f"ERROR: Could not sign or save certificate: {e}")
-
 
 if __name__ == "__main__":
     if os.geteuid() != 0:
