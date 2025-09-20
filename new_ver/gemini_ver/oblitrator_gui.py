@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# obliterator_gui.py - (Version 2.0 - All Fixes Included)
+# obliterator_gui.py - (Version 3.0 - Splash Screen & Progress Bar Fix)
 # GUI for the Obliterator Secure Wipe Tool
 
 import tkinter
@@ -17,15 +17,39 @@ from cryptography.hazmat.primitives.asymmetric import padding
 
 # --- Configuration ---
 APP_NAME = "Obliterator"
-APP_VERSION = "2.0-stable"
+APP_VERSION = "3.0-final"
 THEME_COLOR = "dark-blue"
 PRIVATE_KEY_PATH = "/mnt/home/obliterator/keys/private_key.pem"
 CERT_DIR = "/mnt/home/obliterator/certificates/"
 WIPE_SCRIPT_PATH = "/mnt/home/obliterator/wipe_disk.sh"
 
-# --- [FIX 3 APPLIED] Corrected Confirmation Dialog ---
+# --- [NEW] Splash Screen Window ---
+class SplashScreen(customtkinter.CTkToplevel):
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.title("Obliterator")
+        self.geometry("400x200")
+        self.overrideredirect(True) # Removes window decorations
+
+        # Center the splash screen
+        parent.update_idletasks()
+        parent_x = parent.winfo_x()
+        parent_y = parent.winfo_y()
+        parent_width = parent.winfo_width()
+        parent_height = parent.winfo_height()
+        self.geometry(f"+{parent_x + parent_width // 2 - 200}+{parent_y + parent_height // 2 - 100}")
+
+        main_label = customtkinter.CTkLabel(self, text=APP_NAME, font=("Roboto", 40, "bold"))
+        main_label.pack(pady=40, padx=20)
+        
+        status_label = customtkinter.CTkLabel(self, text="Initializing and detecting devices...", font=("Roboto", 12))
+        status_label.pack(pady=10)
+
+        # The splash screen will be destroyed by the main app after initialization
+        self.lift()
+
+# --- Corrected Confirmation Dialog ---
 class ConfirmationDialog(customtkinter.CTkToplevel):
-    """Modal dialog for final wipe confirmation."""
     def __init__(self, parent, device_info):
         super().__init__(parent)
         self.transient(parent)
@@ -40,7 +64,6 @@ class ConfirmationDialog(customtkinter.CTkToplevel):
         main_label.pack(pady=10)
         
         info_text = f"You are about to permanently destroy all data on:\n\n"
-        # Using the safe 'or' pattern here as well for good practice
         for dev in self.device_info:
             model = dev.get('model') or 'N/A'
             size = dev.get('size') or 'N/A'
@@ -62,9 +85,6 @@ class ConfirmationDialog(customtkinter.CTkToplevel):
         cancel_button.pack(pady=5)
 
         self.entry.bind("<KeyRelease>", self.check_token)
-
-        # This is the FIX for the "grab failed" error.
-        # It delays making the window modal until after it's drawn.
         self.after(50, self.grab_set)
 
     def check_token(self, event):
@@ -80,6 +100,9 @@ class ConfirmationDialog(customtkinter.CTkToplevel):
 class App(customtkinter.CTk):
     def __init__(self):
         super().__init__()
+        self.withdraw() # Hide main window initially
+        
+        splash = SplashScreen(self)
 
         self.title(APP_NAME)
         self.geometry("800x600")
@@ -91,19 +114,16 @@ class App(customtkinter.CTk):
         
         self.selected_devices = []
 
-        # --- Header ---
         self.header_frame = customtkinter.CTkFrame(self, corner_radius=0)
         self.header_frame.grid(row=0, column=0, sticky="ew", padx=10, pady=10)
         self.header_label = customtkinter.CTkLabel(self.header_frame, text=APP_NAME, font=("Roboto", 24, "bold"))
         self.header_label.pack(pady=10)
 
-        # --- Device List ---
         self.device_frame = customtkinter.CTkFrame(self)
         self.device_frame.grid(row=1, column=0, sticky="nsew", padx=10, pady=5)
         self.device_frame.grid_columnconfigure(0, weight=1)
         self.device_widgets = {}
 
-        # --- Wipe Controls ---
         self.control_frame = customtkinter.CTkFrame(self, corner_radius=0)
         self.control_frame.grid(row=2, column=0, sticky="ew", padx=10, pady=10)
         self.control_frame.grid_columnconfigure((0, 2), weight=1)
@@ -114,7 +134,6 @@ class App(customtkinter.CTk):
         self.wipe_button = customtkinter.CTkButton(self.control_frame, text="Wipe Selected Drive(s)", command=self.start_wipe_process, state="disabled", fg_color="red", hover_color="darkred")
         self.wipe_button.grid(row=0, column=2, padx=10, pady=10)
         
-        # --- Progress Display ---
         self.progress_frame = customtkinter.CTkFrame(self)
         self.progress_frame.grid(row=3, column=0, sticky="ew", padx=10, pady=10)
         self.progress_label = customtkinter.CTkLabel(self.progress_frame, text="Status: Idle")
@@ -126,6 +145,9 @@ class App(customtkinter.CTk):
         self.log_textbox.grid(row=4, column=0, sticky="nsew", padx=10, pady=10)
 
         self.populate_devices()
+
+        splash.destroy()
+        self.deiconify() # Show main window
 
     def log(self, message):
         self.log_textbox.configure(state="normal")
@@ -145,7 +167,6 @@ class App(customtkinter.CTk):
             self.log(f"Error detecting devices: {e}")
             return []
 
-    # --- [FIX 2 APPLIED] Corrected Device Population ---
     def populate_devices(self):
         for widget in self.device_frame.winfo_children():
             widget.destroy()
@@ -166,8 +187,6 @@ class App(customtkinter.CTk):
             dev_path = f"/dev/{dev.get('name', 'N/A')}"
             var = tkinter.BooleanVar()
             
-            # This is the FIX for the "NoneType" error.
-            # It safely handles cases where model/serial/size is missing or null.
             display_text = (
                 f"{dev_path:<12} "
                 f"{(dev.get('model') or 'N/A'):<30} "
@@ -176,11 +195,8 @@ class App(customtkinter.CTk):
             )
 
             checkbox = customtkinter.CTkCheckBox(
-                self.device_frame,
-                text=display_text,
-                variable=var,
-                font=("monospace", 12),
-                command=self.update_selection_status
+                self.device_frame, text=display_text, variable=var,
+                font=("monospace", 12), command=self.update_selection_status
             )
             checkbox.pack(anchor="w", padx=10)
             self.device_widgets[dev_path] = {"var": var, "data": dev}
@@ -190,10 +206,7 @@ class App(customtkinter.CTk):
         self.selected_devices = [
             info["data"] for path, info in self.device_widgets.items() if info["var"].get()
         ]
-        if self.selected_devices:
-            self.wipe_button.configure(state="normal")
-        else:
-            self.wipe_button.configure(state="disabled")
+        self.wipe_button.configure(state="normal" if self.selected_devices else "disabled")
 
     def start_wipe_process(self):
         dialog = ConfirmationDialog(self, self.selected_devices)
@@ -209,25 +222,18 @@ class App(customtkinter.CTk):
 
     def run_wipe_script(self, device_data):
         device_path = f"/dev/{device_data['name']}"
-        
-        # --- THIS IS THE CORRECTED LINE ---
-        # We remove 'sudo' because the main script is already running as root.
         command = ['bash', WIPE_SCRIPT_PATH, device_path, 'OBLITERATE']
         
-        # Add a log message to show exactly what command is being run
         self.log(f"Executing command: {' '.join(command)}")
         
         try:
-            # The 'process' variable will now be correctly started with root rights
             process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1)
             
-            # Read stdout for progress updates
             for line in iter(process.stdout.readline, ''):
                 self.after(0, self.handle_script_output, line.strip())
 
-            process.wait() # Wait for the script to finish
+            process.wait()
             
-            # Check the result after it's done
             if process.returncode == 0:
                 self.after(0, self.finish_wipe, device_data, True)
             else:
@@ -239,13 +245,29 @@ class App(customtkinter.CTk):
             self.after(0, self.log, f"CRITICAL FAILURE: Could not start wipe process: {e}")
             self.after(0, self.finish_wipe, device_data, False)
             
+    # --- [NEW] Corrected Progress Bar Logic ---
     def handle_script_output(self, line):
         self.log(line)
-        if "PROGRESS:" in line:
-            parts = line.split(':')
-            self.progress_label.configure(text=f"Status: {parts[2]}")
+        if line.startswith("PROGRESS:"):
+            # Example: "PROGRESS:1/5:Starting Pass 1..."
+            try:
+                parts = line.split(':')
+                progress_part = parts[1] # "1/5"
+                status_message = parts[2]
+                
+                current_pass, total_passes = map(int, progress_part.split('/'))
+                
+                # Update the progress bar based on the pass number
+                progress_value = float(current_pass) / float(total_passes)
+                self.progress_bar.set(progress_value)
+                
+                self.progress_label.configure(text=f"Status: Pass {current_pass} of {total_passes} - {status_message}")
+            except (IndexError, ValueError):
+                # Fallback for unexpected log format
+                self.progress_label.configure(text="Status: Processing...")
         elif "STATUS:SUCCESS" in line:
             self.progress_bar.set(1)
+            self.progress_label.configure(text="Status: Wipe Complete!")
 
     def finish_wipe(self, device_data, success):
         if success:
@@ -260,45 +282,32 @@ class App(customtkinter.CTk):
         self.refresh_button.configure(state="normal")
         self.populate_devices()
 
-    # --- [FIX 1 APPLIED] Certificate generation with 'cryptography' library ---
     def generate_certificate(self, device_data):
         timestamp = datetime.datetime.now(datetime.timezone.utc).isoformat()
         serial = device_data.get('serial') or 'UNKNOWN_SERIAL'
         
         cert = {
-            "iss": APP_NAME,
-            "ver": APP_VERSION,
-            "iat": timestamp,
+            "iss": APP_NAME, "ver": APP_VERSION, "iat": timestamp,
             "media": {
-                "type": device_data.get("type"),
-                "model": device_data.get("model"),
-                "serial": serial,
-                "size": device_data.get("size")
+                "type": device_data.get("type"), "model": device_data.get("model"),
+                "serial": serial, "size": device_data.get("size")
             },
             "sanitization": {
-                "method": "Clear",
-                "technique": "5-Pass Overwrite",
-                "status": "Success"
+                "method": "Clear", "technique": "5-Pass Overwrite", "status": "Success"
             },
             "verification": {
-                "method": "Post-Wipe Write/Read Check (Pass 5)",
-                "status": "Success"
+                "method": "Post-Wipe Sampling Check", "status": "Success"
             }
         }
         
         try:
             with open(PRIVATE_KEY_PATH, 'rb') as f:
-                private_key = serialization.load_pem_private_key(
-                    f.read(),
-                    password=None,
-                )
+                private_key = serialization.load_pem_private_key(f.read(), password=None)
             
             json_payload_bytes = json.dumps(cert, sort_keys=True).encode('utf-8')
 
             signature = private_key.sign(
-                json_payload_bytes,
-                padding.PKCS1v15(),
-                hashes.SHA256()
+                json_payload_bytes, padding.PKCS1v15(), hashes.SHA256()
             )
             
             signed_cert_container = {
