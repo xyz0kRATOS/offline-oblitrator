@@ -25,6 +25,7 @@ APP_VERSION = "11.0-final"
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 THEME_FILE = os.path.join(SCRIPT_DIR, "purple_theme.json")
 LOGO_FILE = os.path.join(SCRIPT_DIR, "logo.png") # Path to your logo
+LOGO1_FILE = os.path.join(SCRIPT_DIR, "logo1.png")
 PRIVATE_KEY_PATH = os.path.join(SCRIPT_DIR, "keys/private_key.pem")
 CERT_DIR = os.path.join(SCRIPT_DIR, "certificates/")
 WIPE_SCRIPT_PATH = os.path.join(SCRIPT_DIR, "wipe_disk.sh")
@@ -128,7 +129,7 @@ class MainFrame(customtkinter.CTkFrame):
         header_frame.grid_columnconfigure(0, weight=1)
         try:
             # Increased width, adjusted height for better aspect ratio, centered
-            self.logo_image = customtkinter.CTkImage(Image.open(LOGO_FILE), size=(500, 120)) 
+            self.logo_image = customtkinter.CTkImage(Image.open(LOGO1_FILE), size=(500, 120)) 
             header_label = customtkinter.CTkLabel(header_frame, image=self.logo_image, text="")
             header_label.grid(row=0, column=0, pady=10)
         except FileNotFoundError:
