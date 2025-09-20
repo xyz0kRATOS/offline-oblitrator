@@ -4,7 +4,7 @@
 # This script is designed to be called by obliterator_gui.py.
 #
 # Usage:
-# sudo bash wipe_disk.sh /dev/sdX OBLITERATE
+# bash wipe_disk.sh /dev/sdX OBLITERATE
 
 TARGET_DEVICE=$1
 CONFIRM_TOKEN=$2
