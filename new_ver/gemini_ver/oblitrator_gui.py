@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# obliterator_gui.py - (Version 4.0 - Single-Window Redesign)
+# obliterator_gui.py - (Version 5.0 - NIST Form & Purple Theme)
 # GUI for the Obliterator Secure Wipe Tool
 
 import tkinter
@@ -12,10 +12,14 @@ import threading
 import time
 from queue import Queue, Empty
 
+# --- Imports for the 'cryptography' library ---
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import padding
+
 # --- Configuration ---
 APP_NAME = "Obliterator"
-APP_VERSION = "4.0-final"
-THEME_COLOR = "dark-blue"
+APP_VERSION = "5.0-final"
+THEME_FILE = "purple_theme.json" # New custom theme
 PRIVATE_KEY_PATH = "/mnt/home/obliterator/keys/private_key.pem"
 CERT_DIR = "/mnt/home/obliterator/certificates/"
 WIPE_SCRIPT_PATH = "/mnt/home/obliterator/wipe_disk.sh"
@@ -24,21 +28,23 @@ WIPE_SCRIPT_PATH = "/mnt/home/obliterator/wipe_disk.sh"
 class App(customtkinter.CTk):
     def __init__(self):
         super().__init__()
-        self.title(APP_NAME)
-        self.geometry("850x650")
         customtkinter.set_appearance_mode("Dark")
-        customtkinter.set_default_color_theme(THEME_COLOR)
+        if os.path.exists(THEME_FILE):
+            customtkinter.set_default_color_theme(THEME_FILE)
+        
+        self.title(APP_NAME)
+        self.geometry("1200x800") # Increased size for new form
 
         self.grid_rowconfigure(0, weight=1)
         self.grid_columnconfigure(0, weight=1)
 
-        self.container = customtkinter.CTkFrame(self)
+        self.container = customtkinter.CTkFrame(self, fg_color="transparent")
         self.container.pack(side="top", fill="both", expand=True)
         self.container.grid_rowconfigure(0, weight=1)
         self.container.grid_columnconfigure(0, weight=1)
 
         self.frames = {}
-        self.selected_devices_data = []
+        self.certificate_data = {}
 
         for F in (SplashFrame, MainFrame, ConfirmationFrame, WipeProgressFrame):
             frame = F(self.container, self)
@@ -50,17 +56,17 @@ class App(customtkinter.CTk):
     def show_frame(self, cont):
         frame = self.frames[cont]
         frame.tkraise()
-        # If the frame has an 'on_show' method, call it.
         if hasattr(frame, 'on_show'):
             frame.on_show()
 
-    def start_wipe_process(self, devices):
-        self.selected_devices_data = devices
+    def start_wipe_process(self, devices, cert_data):
+        self.certificate_data = cert_data
+        self.certificate_data['device'] = devices[0]
         self.frames[ConfirmationFrame].update_device_info(devices)
         self.show_frame(ConfirmationFrame)
 
     def execute_wipe(self):
-        self.frames[WipeProgressFrame].prepare_for_wipe(self.selected_devices_data[0])
+        self.frames[WipeProgressFrame].prepare_for_wipe(self.certificate_data)
         self.show_frame(WipeProgressFrame)
 
 # --- Splash Screen Frame ---
@@ -70,71 +76,108 @@ class SplashFrame(customtkinter.CTkFrame):
         self.controller = controller
 
         self.logo_label = customtkinter.CTkLabel(self, text="🛡️", font=("Roboto", 80))
-        self.logo_label.pack(pady=(150, 0))
-
+        self.logo_label.pack(pady=(200, 0))
         self.name_label = customtkinter.CTkLabel(self, text=APP_NAME, font=("Roboto", 50, "bold"))
         self.name_label.pack(pady=20, padx=20)
-
         self.progress_bar = customtkinter.CTkProgressBar(self, mode="indeterminate")
         self.progress_bar.pack(pady=10, padx=100, fill="x")
 
     def on_show(self):
-        """Called by the controller when this frame is shown."""
         self.progress_bar.start()
-        # After 3 seconds, transition to the main frame
         self.after(3000, lambda: self.controller.show_frame(MainFrame))
 
 # --- Main Application Frame ---
 class MainFrame(customtkinter.CTkFrame):
     def __init__(self, parent, controller):
-        super().__init__(parent)
+        super().__init__(parent, fg_color="transparent")
         self.controller = controller
         self.device_checkboxes = {}
+        self.form_widgets = {}
 
-        self.grid_columnconfigure(0, weight=1)
-        self.grid_columnconfigure(1, weight=2)
+        self.grid_columnconfigure((0, 1, 2), weight=1)
         self.grid_rowconfigure(1, weight=1)
+        
+        header_label = customtkinter.CTkLabel(self, text="Obliterator Dashboard", font=("Roboto", 24, "bold"))
+        header_label.grid(row=0, column=0, columnspan=3, pady=20, padx=20, sticky="w")
 
-        # Header
-        header_label = customtkinter.CTkLabel(self, text="Select Drives to Obliterate", font=("Roboto", 24, "bold"))
-        header_label.grid(row=0, column=0, columnspan=2, pady=20, padx=20, sticky="w")
-
-        # Drive List Panel
+        # Column 1: Device Selection
         drive_list_frame = customtkinter.CTkFrame(self)
         drive_list_frame.grid(row=1, column=0, pady=10, padx=20, sticky="nsew")
         drive_list_frame.grid_rowconfigure(1, weight=1)
         drive_list_frame.grid_columnconfigure(0, weight=1)
-        
-        drive_list_header = customtkinter.CTkLabel(drive_list_frame, text="Available Devices", font=("Roboto", 16))
+        drive_list_header = customtkinter.CTkLabel(drive_list_frame, text="1. Select Device", font=("Roboto", 16, "bold"))
         drive_list_header.grid(row=0, column=0, pady=10, padx=10, sticky="w")
-        
-        self.scrollable_drive_list = customtkinter.CTkScrollableFrame(drive_list_frame, label_text="")
+        self.scrollable_drive_list = customtkinter.CTkScrollableFrame(drive_list_frame)
         self.scrollable_drive_list.grid(row=1, column=0, pady=5, padx=10, sticky="nsew")
 
-        # Drive Details Panel
-        drive_details_frame = customtkinter.CTkFrame(self)
-        drive_details_frame.grid(row=1, column=1, pady=10, padx=(0, 20), sticky="nsew")
-        drive_details_frame.grid_rowconfigure(1, weight=1)
-        drive_details_frame.grid_columnconfigure(0, weight=1)
-        
-        details_header = customtkinter.CTkLabel(drive_details_frame, text="Drive Details", font=("Roboto", 16))
-        details_header.grid(row=0, column=0, pady=10, padx=10, sticky="w")
-        
-        self.details_textbox = customtkinter.CTkTextbox(drive_details_frame, state="disabled", font=("monospace", 12))
-        self.details_textbox.grid(row=1, column=0, pady=5, padx=10, sticky="nsew")
+        # Column 2: Certificate & Operator Information Form
+        form_frame = customtkinter.CTkFrame(self)
+        form_frame.grid(row=1, column=1, pady=10, padx=10, sticky="nsew")
+        form_frame.grid_columnconfigure(0, weight=1)
+        form_frame.grid_rowconfigure(1, weight=1)
+        form_header = customtkinter.CTkLabel(form_frame, text="2. Enter Certificate Details", font=("Roboto", 16, "bold"))
+        form_header.grid(row=0, column=0, pady=10, padx=10, sticky="w")
+        self.cert_form = customtkinter.CTkScrollableFrame(form_frame)
+        self.cert_form.grid(row=1, column=0, pady=5, padx=10, sticky="nsew")
+        self.cert_form.grid_columnconfigure(1, weight=1)
+        self.create_form_fields()
 
-        # Footer / Action Buttons
-        footer_frame = customtkinter.CTkFrame(self, fg_color="transparent")
-        footer_frame.grid(row=2, column=0, columnspan=2, pady=20, padx=20, sticky="ew")
+        # Column 3: Drive Details & Action
+        action_frame = customtkinter.CTkFrame(self)
+        action_frame.grid(row=1, column=2, pady=10, padx=20, sticky="nsew")
+        action_frame.grid_rowconfigure(1, weight=1)
+        action_frame.grid_columnconfigure(0, weight=1)
+        details_header = customtkinter.CTkLabel(action_frame, text="3. Review & Wipe", font=("Roboto", 16, "bold"))
+        details_header.grid(row=0, column=0, pady=10, padx=10, sticky="w")
+        self.details_textbox = customtkinter.CTkTextbox(action_frame, state="disabled", font=("monospace", 12))
+        self.details_textbox.grid(row=1, column=0, pady=5, padx=10, sticky="nsew")
         
-        self.refresh_button = customtkinter.CTkButton(footer_frame, text="Refresh Devices", command=self.populate_devices)
-        self.refresh_button.pack(side="left")
-        
-        self.wipe_button = customtkinter.CTkButton(footer_frame, text="Wipe Selected...", state="disabled", fg_color="red", hover_color="darkred", command=self.confirm_wipe)
-        self.wipe_button.pack(side="right")
+        self.refresh_button = customtkinter.CTkButton(action_frame, text="Refresh Devices", command=self.populate_devices)
+        self.refresh_button.grid(row=2, column=0, pady=10, padx=10, sticky="ew")
+        self.wipe_button = customtkinter.CTkButton(action_frame, text="Proceed to Wipe...", state="disabled", fg_color="red", hover_color="darkred", command=self.confirm_wipe)
+        self.wipe_button.grid(row=3, column=0, pady=10, padx=10, sticky="ew")
 
     def on_show(self):
         self.populate_devices()
+
+    def create_form_fields(self):
+        fields = {
+            "Media Details": {
+                "manufacturer": ("Entry", ""), "model": ("Entry", ""), "serial_number": ("Entry", ""),
+                "property_id": ("Entry", "Optional"),
+                "media_type": ("Option", ["Magnetic", "Flash Memory", "Hybrid"]),
+                "media_source": ("Entry", "e.g., User PC, Server")
+            },
+            "Sanitization Plan": {
+                "sanitization_method": ("Option", ["Clear", "Purge", "Destroy"]),
+                "sanitization_technique": ("Entry", "e.g., 5-Pass Overwrite"),
+                "tool_used": ("Entry", f"{APP_NAME} v{APP_VERSION}"),
+                "verification_method": ("Option", ["Full", "Sampling", "None"]),
+                "destination": ("Entry", "e.g., Reuse, Storage, Disposal")
+            },
+            "Operator Details": {
+                "operator_name": ("Entry", ""), "operator_title": ("Entry", ""),
+                "operator_location": ("Entry", ""), "operator_contact": ("Entry", ""),
+                "operator_signature": ("Entry", "Type full name to sign")
+            }
+        }
+        row = 0
+        for section, items in fields.items():
+            section_label = customtkinter.CTkLabel(self.cert_form, text=section, font=("Roboto", 14, "bold"))
+            section_label.grid(row=row, column=0, columnspan=2, pady=(15, 5), padx=10, sticky="w")
+            row += 1
+            for key, (widget_type, default) in items.items():
+                label = customtkinter.CTkLabel(self.cert_form, text=key.replace('_', ' ').title())
+                label.grid(row=row, column=0, pady=5, padx=10, sticky="w")
+                if widget_type == "Entry":
+                    widget = customtkinter.CTkEntry(self.cert_form, placeholder_text=default)
+                    if key == "tool_used":
+                        widget.insert(0, default)
+                else: # OptionMenu
+                    widget = customtkinter.CTkOptionMenu(self.cert_form, values=default)
+                widget.grid(row=row, column=1, pady=5, padx=10, sticky="ew")
+                self.form_widgets[key] = widget
+                row += 1
 
     def populate_devices(self):
         for checkbox in self.device_checkboxes.values():
@@ -157,42 +200,47 @@ class MainFrame(customtkinter.CTkFrame):
         self.update_selection_status()
 
     def update_selection_status(self):
-        selected_dev_paths = [path for path, info in self.device_checkboxes.items() if info["var"].get()]
+        selected_devs = [info for path, info in self.device_checkboxes.items() if info["var"].get()]
         
-        if len(selected_dev_paths) == 1:
+        if len(selected_devs) == 1:
             self.wipe_button.configure(state="normal")
-            self.display_drive_details(selected_dev_paths[0])
-        elif len(selected_dev_paths) > 1:
-            self.wipe_button.configure(state="disabled") # Only allow one drive at a time for safety
-            self.details_textbox.configure(state="normal")
-            self.details_textbox.delete("1.0", "end")
-            self.details_textbox.insert("1.0", "Please select only one drive to see details.")
-            self.details_textbox.configure(state="disabled")
+            self.display_drive_details(selected_devs[0]["data"])
         else:
             self.wipe_button.configure(state="disabled")
-            self.details_textbox.configure(state="normal")
-            self.details_textbox.delete("1.0", "end")
-            self.details_textbox.insert("1.0", "Select a drive to view its details.")
-            self.details_textbox.configure(state="disabled")
+            self.display_drive_details(None, count=len(selected_devs))
 
-    def display_drive_details(self, dev_path):
-        dev_data = self.device_checkboxes[dev_path]["data"]
-        details = (
-            f"Device: {dev_path}\n"
-            f"Model:  {dev_data.get('model') or 'N/A'}\n"
-            f"Serial: {dev_data.get('serial') or 'N/A'}\n"
-            f"Size:   {dev_data.get('size') or 'N/A'}\n"
-            f"Type:   {dev_data.get('type') or 'N/A'}\n"
-        )
+    def display_drive_details(self, dev_data, count=1):
         self.details_textbox.configure(state="normal")
         self.details_textbox.delete("1.0", "end")
-        self.details_textbox.insert("1.0", details)
+        if dev_data:
+            details = (
+                f"Device: /dev/{dev_data.get('name')}\n"
+                f"Model:  {dev_data.get('model') or 'N/A'}\n"
+                f"Serial: {dev_data.get('serial') or 'N/A'}\n"
+                f"Size:   {dev_data.get('size') or 'N/A'}\n"
+                f"Type:   {dev_data.get('type') or 'N/A'}\n"
+            )
+            self.details_textbox.insert("1.0", details)
+            # Auto-fill form
+            self.form_widgets['manufacturer'].delete(0, "end")
+            self.form_widgets['model'].delete(0, "end"); self.form_widgets['model'].insert(0, dev_data.get('model') or '')
+            self.form_widgets['serial_number'].delete(0, "end"); self.form_widgets['serial_number'].insert(0, dev_data.get('serial') or '')
+        elif count > 1:
+            self.details_textbox.insert("1.0", "Please select only ONE drive to wipe at a time.")
+        else:
+            self.details_textbox.insert("1.0", "Select a drive to view details and fill form.")
         self.details_textbox.configure(state="disabled")
 
     def confirm_wipe(self):
         selected_devices = [info["data"] for path, info in self.device_checkboxes.items() if info["var"].get()]
-        self.controller.start_wipe_process(selected_devices)
+        
+        cert_data = {}
+        for key, widget in self.form_widgets.items():
+            cert_data[key] = widget.get()
+            
+        self.controller.start_wipe_process(selected_devices, cert_data)
 
+# ... [ConfirmationFrame and WipeProgressFrame remain largely the same, but WipeProgressFrame needs to handle cert data]
 # --- Confirmation Frame ---
 class ConfirmationFrame(customtkinter.CTkFrame):
     def __init__(self, parent, controller):
@@ -200,7 +248,7 @@ class ConfirmationFrame(customtkinter.CTkFrame):
         self.controller = controller
 
         self.main_label = customtkinter.CTkLabel(self, text="⚠️ FINAL CONFIRMATION ⚠️", font=("Roboto", 36, "bold"), text_color="orange")
-        self.main_label.pack(pady=(100, 20))
+        self.main_label.pack(pady=(200, 20))
 
         self.info_label = customtkinter.CTkLabel(self, text="This will permanently destroy all data.", font=("Roboto", 16), wraplength=450)
         self.info_label.pack(pady=10, padx=20)
@@ -222,7 +270,7 @@ class ConfirmationFrame(customtkinter.CTkFrame):
         cancel_button.pack(side="right", padx=10)
 
     def update_device_info(self, devices):
-        dev = devices[0] # We only handle one at a time
+        dev = devices[0]
         info_text = (
             f"You are about to permanently destroy all data on:\n\n"
             f"Device: /dev/{dev.get('name')}\n"
@@ -230,8 +278,8 @@ class ConfirmationFrame(customtkinter.CTkFrame):
             f"Size: {dev.get('size') or 'N/A'}"
         )
         self.info_label.configure(text=info_text)
-        self.entry.delete(0, "end") # Clear entry box
-        self.check_token(None) # Disable button
+        self.entry.delete(0, "end")
+        self.check_token(None)
 
     def check_token(self, event):
         self.confirm_button.configure(state="normal" if self.entry.get() == "OBLITERATE" else "disabled")
@@ -243,6 +291,7 @@ class WipeProgressFrame(customtkinter.CTkFrame):
         self.controller = controller
         self.process = None
         self.start_time = 0
+        self.cert_data = {}
 
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(0, weight=1)
@@ -272,7 +321,7 @@ class WipeProgressFrame(customtkinter.CTkFrame):
         self.log_textbox = customtkinter.CTkTextbox(center_frame, height=200, width=500, state="disabled")
         self.log_textbox.pack(pady=10, padx=20)
         
-        self.finish_button = customtkinter.CTkButton(center_frame, text="Finished", command=lambda: controller.show_frame(MainFrame))
+        self.finish_button = customtkinter.CTkButton(center_frame, text="Return to Dashboard", command=lambda: controller.show_frame(MainFrame))
 
     def log(self, message):
         self.log_textbox.configure(state="normal")
@@ -280,12 +329,14 @@ class WipeProgressFrame(customtkinter.CTkFrame):
         self.log_textbox.see("end")
         self.log_textbox.configure(state="disabled")
 
-    def prepare_for_wipe(self, device_data):
+    def prepare_for_wipe(self, cert_data):
+        self.cert_data = cert_data
+        device_data = self.cert_data['device']
         self.log_textbox.configure(state="normal")
         self.log_textbox.delete("1.0", "end")
         self.log_textbox.configure(state="disabled")
         self.progress_bar.set(0)
-        self.finish_button.pack_forget() # Hide finish button
+        self.finish_button.pack_forget()
         self.title_label.configure(text=f"Wiping /dev/{device_data['name']}")
         threading.Thread(target=self.run_wipe_script, args=(device_data,), daemon=True).start()
 
@@ -297,15 +348,10 @@ class WipeProgressFrame(customtkinter.CTkFrame):
         
         try:
             self.process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1)
-            
-            # Threaded readers for stdout and stderr
             q_out, q_err = Queue(), Queue()
             threading.Thread(target=self.read_stream, args=(self.process.stdout, q_out), daemon=True).start()
             threading.Thread(target=self.read_stream, args=(self.process.stderr, q_err), daemon=True).start()
-            
-            # Check queues periodically
             self.after(100, self.check_queues, q_out, q_err)
-            
         except Exception as e:
             self.log(f"CRITICAL FAILURE: {e}")
 
@@ -314,7 +360,6 @@ class WipeProgressFrame(customtkinter.CTkFrame):
             queue.put(line)
 
     def check_queues(self, q_out, q_err):
-        # Handle stdout (for PROGRESS:)
         try:
             while True:
                 line = q_out.get_nowait().strip()
@@ -323,14 +368,13 @@ class WipeProgressFrame(customtkinter.CTkFrame):
                     self.update_progress_from_line(line)
                 elif "STATUS:SUCCESS" in line:
                     self.wipe_finished(True)
+                    return # Stop checking
         except Empty:
             pass
 
-        # Handle stderr (for pv speed)
         try:
             while True:
                 line = q_err.get_nowait().strip()
-                # pv output is a carriage return, we just grab the last one
                 if "MB/s" in line:
                     parts = line.split()
                     for i, part in enumerate(parts):
@@ -338,17 +382,15 @@ class WipeProgressFrame(customtkinter.CTkFrame):
                             speed = parts[i-1] if i > 0 else "?"
                             self.speed_label.configure(text=f"Throughput: {speed} MB/s")
                             break
-                else: # Log other errors
+                else:
                     self.log(f"ERR: {line}")
         except Empty:
             pass
         
-        # Keep checking if process is still running
         if self.process.poll() is None:
             self.after(100, self.check_queues, q_out, q_err)
-        else: # Process finished
-             if self.process.returncode != 0:
-                 self.wipe_finished(False)
+        elif self.process.returncode != 0:
+            self.wipe_finished(False)
 
     def update_progress_from_line(self, line):
         try:
@@ -366,6 +408,7 @@ class WipeProgressFrame(customtkinter.CTkFrame):
         if success:
             self.progress_label.configure(text="Status: Wipe and Verification Complete!")
             self.log("✅ WIPE SUCCESSFUL")
+            self.generate_certificate()
         else:
             self.progress_label.configure(text="Status: WIPE FAILED!", text_color="red")
             self.log("❌ WIPE FAILED. Check logs for errors.")
@@ -376,6 +419,71 @@ class WipeProgressFrame(customtkinter.CTkFrame):
             elapsed = time.time() - self.start_time
             self.time_label.configure(text=f"Elapsed Time: {str(datetime.timedelta(seconds=int(elapsed)))}")
             self.after(1000, self.update_timer)
+
+    def generate_certificate(self):
+        self.log("Generating sanitization certificate...")
+        timestamp = datetime.datetime.now(datetime.timezone.utc)
+        device_data = self.cert_data.pop('device')
+        serial = device_data.get('serial') or 'UNKNOWN_SERIAL'
+
+        # Build the certificate from the form data
+        cert_payload = {
+            "nist_reference": "NIST SP 800-88r2 IPD July 2025",
+            "tool_information": {"name": APP_NAME, "version": APP_VERSION},
+            "sanitization_event": {
+                "timestamp": timestamp.isoformat(),
+                "status": "Success",
+                "method": self.cert_data.get('sanitization_method'),
+                "technique": self.cert_data.get('sanitization_technique')
+            },
+            "media_information": {
+                "manufacturer": self.cert_data.get('manufacturer'),
+                "model": self.cert_data.get('model'),
+                "serial_number": self.cert_data.get('serial_number'),
+                "property_id": self.cert_data.get('property_id'),
+                "media_type": self.cert_data.get('media_type'),
+                "media_source": self.cert_data.get('media_source'),
+                "destination": self.cert_data.get('destination')
+            },
+            "verification": {
+                "method": self.cert_data.get('verification_method'),
+                "timestamp": timestamp.isoformat(),
+                "status": "Passed"
+            },
+            "operator": {
+                "name": self.cert_data.get('operator_name'),
+                "title": self.cert_data.get('operator_title'),
+                "location": self.cert_data.get('operator_location'),
+                "contact": self.cert_data.get('operator_contact'),
+                "signature": self.cert_data.get('operator_signature')
+            }
+        }
+        
+        try:
+            with open(PRIVATE_KEY_PATH, 'rb') as f:
+                private_key = serialization.load_pem_private_key(f.read(), password=None)
+            
+            json_payload_bytes = json.dumps(cert_payload, sort_keys=True).encode('utf-8')
+            signature = private_key.sign(json_payload_bytes, padding.PKCS1v15(), hashes.SHA256())
+            
+            signed_cert_container = {
+                "certificate_payload": cert_payload,
+                "signature": base64.b64encode(signature).decode('utf-8')
+            }
+            
+            filename = f"wipe-{timestamp.strftime('%Y%m%d-%H%M%S')}-{serial}.json"
+            filepath = os.path.join(CERT_DIR, filename)
+            
+            if not os.path.exists(CERT_DIR):
+                os.makedirs(CERT_DIR)
+                
+            with open(filepath, 'w') as f:
+                json.dump(signed_cert_container, f, indent=2)
+                
+            self.log(f"✅ Certificate saved successfully to {filepath}")
+            
+        except Exception as e:
+            self.log(f"❌ ERROR: Could not sign or save certificate: {e}")
 
 # --- Entry Point ---
 if __name__ == "__main__":
