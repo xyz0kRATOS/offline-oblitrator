@@ -166,7 +166,7 @@ class MainFrame(customtkinter.CTkFrame):
         # --- Footer ---
         footer_frame = customtkinter.CTkFrame(self, fg_color="transparent")
         footer_frame.grid(row=3, column=0, pady=20, padx=20, sticky="e")
-        self.wipe_button = customtkinter.CTkButton(footer_frame, text="Proceed to Final Confirmation...", font=FONT_BODY, state="disabled", 
+        self.wipe_button = customtkinter.CTkButton(footer_frame, text="Proceed to Wiping...", font=FONT_BODY, state="disabled", 
                                                  fg_color="#8B0000", hover_color="#A52A2A", # Maroon Colors
                                                  command=self.confirm_wipe)
         self.wipe_button.pack()
