@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# obliterator_gui.py - (Version 7.0 - Custom Widgets & Final Theming)
+# obliterator_gui.py - (Version 7.1 - Attribute Error Hotfix)
 # GUI for the Obliterator Secure Wipe Tool
 
 import tkinter
@@ -18,24 +18,26 @@ from cryptography.hazmat.primitives.asymmetric import padding
 
 # --- Configuration ---
 APP_NAME = "Obliterator"
-APP_VERSION = "7.0-final"
+APP_VERSION = "7.1-final"
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 THEME_FILE = os.path.join(SCRIPT_DIR, "purple_theme.json")
 PRIVATE_KEY_PATH = os.path.join(SCRIPT_DIR, "keys/private_key.pem")
 CERT_DIR = os.path.join(SCRIPT_DIR, "certificates/")
 WIPE_SCRIPT_PATH = os.path.join(SCRIPT_DIR, "wipe_disk.sh")
 
-# --- [NEW] Custom Textbox Widget ---
+# --- [FIXED] Custom Textbox Widget ---
 # This class extends the standard CTkTextbox to allow for a custom scrollbar color.
 class CustomTextbox(customtkinter.CTkTextbox):
     def __init__(self, *args, scrollbar_button_color=None, **kwargs):
         super().__init__(*args, **kwargs)
 
-        # After the textbox is created, we access its internal scrollbar
-        # and manually configure its color if a custom color was provided.
+        # After the textbox is created, we access its internal scrollbars
+        # using their correct names and configure their color.
         if scrollbar_button_color is not None:
-            if self._v_scrollbar is not None:
-                self._v_scrollbar.configure(button_color=scrollbar_button_color)
+            # The vertical scrollbar is named '_scrollbar'
+            if self._scrollbar is not None:
+                self._scrollbar.configure(button_color=scrollbar_button_color)
+            # The horizontal scrollbar is named '_h_scrollbar'
             if self._h_scrollbar is not None:
                 self._h_scrollbar.configure(button_color=scrollbar_button_color)
 
@@ -124,7 +126,6 @@ class MainFrame(customtkinter.CTkFrame):
         details_header = customtkinter.CTkLabel(left_frame, text="Device Details (Auto-Scraped)", font=("Roboto", 16, "bold"))
         details_header.grid(row=2, column=0, pady=(20, 10), padx=10, sticky="w")
         
-        # --- [USAGE] Using the new CustomTextbox ---
         self.details_textbox = CustomTextbox(left_frame, state="disabled", font=("monospace", 12), scrollbar_button_color="#FFD700") # Bright Gold
         self.details_textbox.grid(row=3, column=0, pady=5, padx=10, sticky="nsew")
 
@@ -289,11 +290,8 @@ class WipeProgressFrame(customtkinter.CTkFrame):
         info_frame = customtkinter.CTkFrame(center_frame, fg_color="transparent"); info_frame.pack(pady=20, padx=20, fill="x"); info_frame.grid_columnconfigure((0, 1), weight=1)
         self.time_label = customtkinter.CTkLabel(info_frame, text="Elapsed Time: 00:00:00", font=("monospace", 12)); self.time_label.grid(row=0, column=0, sticky="w")
         self.speed_label = customtkinter.CTkLabel(info_frame, text="Throughput: 0 MB/s", font=("monospace", 12)); self.speed_label.grid(row=0, column=1, sticky="e")
-        
-        # --- [USAGE] Using the new CustomTextbox ---
         self.log_textbox = CustomTextbox(center_frame, height=200, width=500, state="disabled", scrollbar_button_color="#FFD700")
         self.log_textbox.pack(pady=10, padx=20)
-        
         self.finish_button = customtkinter.CTkButton(center_frame, text="Return to Dashboard", command=lambda: controller.show_frame(MainFrame))
     def log(self, message):
         self.log_textbox.configure(state="normal"); self.log_textbox.insert("end", f"{message}\n"); self.log_textbox.see("end"); self.log_textbox.configure(state="disabled")
