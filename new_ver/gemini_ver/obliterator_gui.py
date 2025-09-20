@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# obliterator_gui.py - (Version 13.0 - Fullscreen Mode)
+# obliterator_gui.py - (Version 12.0 - Final Layout)
 # GUI for the Obliterator Secure Wipe Tool
 
 import tkinter
@@ -21,7 +21,7 @@ from cryptography.hazmat.primitives.asymmetric import padding
 
 # --- Configuration ---
 APP_NAME = "OBLITERATOR"
-APP_VERSION = "13.0-final"
+APP_VERSION = "12.0-final"
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 THEME_FILE = os.path.join(SCRIPT_DIR, "purple_theme.json")
 LOGO_FILE = os.path.join(SCRIPT_DIR, "logo.png") 
@@ -54,10 +54,7 @@ class App(customtkinter.CTk):
         else: print(f"Warning: Theme file not found at {THEME_FILE}.")
         
         self.title(APP_NAME)
-        # --- [MODIFICATION] Set fullscreen mode ---
-        self.attributes('-fullscreen', True)
-        self.bind("<Escape>", self.exit_fullscreen) # Allow exiting fullscreen with Esc key
-
+        self.geometry("1200x800")
         self.grid_rowconfigure(0, weight=1); self.grid_columnconfigure(0, weight=1)
 
         self.container = customtkinter.CTkFrame(self, fg_color="transparent")
@@ -73,11 +70,6 @@ class App(customtkinter.CTk):
             frame.grid(row=0, column=0, sticky="nsew")
 
         self.show_frame(SplashFrame)
-
-    def exit_fullscreen(self, event=None):
-        """Allows exiting fullscreen mode by pressing the Escape key."""
-        self.attributes('-fullscreen', False)
-        self.geometry("1200x800") # Revert to a standard window size
 
     def show_frame(self, cont):
         frame = self.frames[cont]
@@ -123,18 +115,21 @@ class MainFrame(customtkinter.CTkFrame):
         self.controller = controller
         self.device_checkboxes = {}
 
+        # --- [MODIFIED] New Layout Structure ---
         self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(0, weight=0)
-        self.grid_rowconfigure(1, weight=1)
-        self.grid_rowconfigure(2, weight=2)
-        self.grid_rowconfigure(3, weight=0)
+        self.grid_rowconfigure(0, weight=0)  # Header
+        self.grid_rowconfigure(1, weight=1)  # Drive Selection
+        self.grid_rowconfigure(2, weight=2)  # Details Boxes
+        self.grid_rowconfigure(3, weight=0)  # Footer
         
+        # --- Header (Text instead of Logo) ---
         header_frame = customtkinter.CTkFrame(self, fg_color="transparent")
         header_frame.grid(row=0, column=0, pady=(10, 0), padx=20, sticky="ew")
         header_frame.grid_columnconfigure(0, weight=1)
         header_label = customtkinter.CTkLabel(header_frame, text=APP_NAME, font=FONT_HEADER)
         header_label.grid(row=0, column=0, pady=10)
 
+        # --- Drive Selection (Top, Horizontal) ---
         drive_list_frame = customtkinter.CTkFrame(self)
         drive_list_frame.grid(row=1, column=0, pady=10, padx=20, sticky="nsew")
         drive_list_frame.grid_columnconfigure(0, weight=1); drive_list_frame.grid_rowconfigure(1, weight=1)
@@ -144,11 +139,13 @@ class MainFrame(customtkinter.CTkFrame):
         self.scrollable_drive_list = customtkinter.CTkScrollableFrame(drive_list_frame)
         self.scrollable_drive_list.grid(row=1, column=0, pady=5, padx=10, sticky="nsew")
 
+        # --- Details Container (Bottom, 2 Columns) ---
         details_container = customtkinter.CTkFrame(self, fg_color="transparent")
         details_container.grid(row=2, column=0, pady=10, padx=20, sticky="nsew")
         details_container.grid_columnconfigure((0, 1), weight=1)
         details_container.grid_rowconfigure(0, weight=1)
 
+        # --- Drive Details Box (Bottom Left) ---
         drive_details_frame = customtkinter.CTkFrame(details_container)
         drive_details_frame.grid(row=0, column=0, padx=(0, 10), sticky="nsew")
         drive_details_frame.grid_columnconfigure(0, weight=1); drive_details_frame.grid_rowconfigure(1, weight=1)
@@ -157,6 +154,7 @@ class MainFrame(customtkinter.CTkFrame):
         self.details_textbox = CustomTextbox(drive_details_frame, state="disabled", font=FONT_MONO, scrollbar_button_color="#FFD700")
         self.details_textbox.grid(row=1, column=0, pady=5, padx=10, sticky="nsew")
 
+        # --- Host System Box (Bottom Right) ---
         host_details_frame = customtkinter.CTkFrame(details_container)
         host_details_frame.grid(row=0, column=1, padx=(10, 0), sticky="nsew")
         host_details_frame.grid_columnconfigure(0, weight=1); host_details_frame.grid_rowconfigure(1, weight=1)
@@ -165,10 +163,11 @@ class MainFrame(customtkinter.CTkFrame):
         self.host_details_textbox = CustomTextbox(host_details_frame, state="disabled", font=FONT_MONO, scrollbar_button_color="#FFD700")
         self.host_details_textbox.grid(row=1, column=0, pady=5, padx=10, sticky="nsew")
         
+        # --- Footer ---
         footer_frame = customtkinter.CTkFrame(self, fg_color="transparent")
         footer_frame.grid(row=3, column=0, pady=20, padx=20, sticky="e")
         self.wipe_button = customtkinter.CTkButton(footer_frame, text="Proceed to Final Confirmation...", font=FONT_BODY, state="disabled", 
-                                                 fg_color="#8B0000", hover_color="#A52A2A",
+                                                 fg_color="#8B0000", hover_color="#A52A2A", # Maroon Colors
                                                  command=self.confirm_wipe)
         self.wipe_button.pack()
     
@@ -263,7 +262,7 @@ class ConfirmationFrame(customtkinter.CTkFrame):
         button_frame = customtkinter.CTkFrame(self, fg_color="transparent")
         button_frame.pack(pady=40)
         self.confirm_button = customtkinter.CTkButton(button_frame, text="Confirm and Wipe", font=FONT_BODY, state="disabled",
-                                                      fg_color="#8B0000", hover_color="#A52A2A",
+                                                      fg_color="#8B0000", hover_color="#A52A2A", # Maroon Colors
                                                       command=self.controller.execute_wipe)
         self.confirm_button.pack(side="left", padx=10)
         cancel_button = customtkinter.CTkButton(button_frame, text="Cancel", font=FONT_BODY, command=lambda: self.controller.show_frame(MainFrame))
@@ -292,22 +291,19 @@ class WipeProgressFrame(customtkinter.CTkFrame):
         self.progress_bar = customtkinter.CTkProgressBar(center_frame, width=500); self.progress_bar.set(0); self.progress_bar.pack(pady=10, padx=20)
         info_frame = customtkinter.CTkFrame(center_frame, fg_color="transparent"); info_frame.pack(pady=20, padx=20, fill="x"); info_frame.grid_columnconfigure((0, 1, 2), weight=1)
         self.time_label = customtkinter.CTkLabel(info_frame, text="Elapsed: 00:00:00", font=FONT_MONO); self.time_label.grid(row=0, column=0, sticky="w")
-        self.data_label = customtkinter.CTkLabel(info_frame, text="Wiped: 0.00 / 0.00 GiB", font=FONT_MONO); self.data_label.grid(row=0, column=1) 
+        self.data_label = customtkinter.CTkLabel(info_frame, text="Wiped: 0.00 / 0.00 GiB", font=FONT_MONO); self.data_label.grid(row=0, column=1)
         self.speed_label = customtkinter.CTkLabel(info_frame, text="Speed: 0 MB/s", font=FONT_MONO); self.speed_label.grid(row=0, column=2, sticky="e")
         self.log_textbox = CustomTextbox(center_frame, height=250, width=600, state="disabled", font=FONT_MONO, scrollbar_button_color="#FFD700")
         self.log_textbox.pack(pady=10, padx=20)
         self.finish_button = customtkinter.CTkButton(center_frame, text="Return to Dashboard", font=FONT_BODY, command=lambda: controller.show_frame(MainFrame))
-    
     def log(self, message):
         self.log_textbox.configure(state="normal"); self.log_textbox.insert("end", f"{message}\n"); self.log_textbox.see("end"); self.log_textbox.configure(state="disabled")
-
     def start_wipe_queue(self, devices):
         self.device_queue = list(devices)
         self.current_device_index, self.total_devices = 0, len(devices)
         self.log_textbox.configure(state="normal"); self.log_textbox.delete("1.0", "end"); self.log_textbox.configure(state="disabled")
         self.finish_button.pack_forget()
         self.process_next_in_queue()
-
     def process_next_in_queue(self):
         if not self.device_queue:
             self.overall_title_label.configure(text="All Wipes Complete!")
@@ -324,7 +320,6 @@ class WipeProgressFrame(customtkinter.CTkFrame):
         self.title_label.configure(text=f"Wiping /dev/{device_data['name']} ({device_data['size']})")
         self.log("\n" + ("-"*50) + f"\nStarting wipe for /dev/{device_data['name']}\n" + ("-"*50))
         threading.Thread(target=self.run_wipe_script, args=(device_data,), daemon=True).start()
-
     def run_wipe_script(self, device_data):
         self.start_time = time.time(); self.after(1000, self.update_timer)
         device_path = f"/dev/{device_data['name']}"; command = ['bash', WIPE_SCRIPT_PATH, device_path, 'OBLITERATE']
@@ -335,10 +330,8 @@ class WipeProgressFrame(customtkinter.CTkFrame):
             threading.Thread(target=self.read_stream, args=(self.process.stderr, q_err), daemon=True).start()
             self.after(100, self.check_queues, q_out, q_err, device_data)
         except Exception as e: self.log(f"CRITICAL FAILURE: {e}")
-
     def read_stream(self, stream, queue):
         for line in iter(stream.readline, ''): queue.put(line)
-
     def check_queues(self, q_out, q_err, device_data):
         try:
             while True:
@@ -364,11 +357,9 @@ class WipeProgressFrame(customtkinter.CTkFrame):
         except Empty: pass
         if self.process.poll() is None: self.after(100, self.check_queues, q_out, q_err, device_data)
         elif self.process.returncode != 0: self.wipe_finished(False, device_data)
-
     def bytes_to_gib_str(self, num_bytes):
         if num_bytes == 0: return "0.00 GiB"
         return f"{num_bytes / (1024**3):.2f} GiB"
-
     def update_progress_from_line(self, line):
         try:
             parts = line.split(':'); progress_part, status_message = parts[1], parts[2]
@@ -376,7 +367,6 @@ class WipeProgressFrame(customtkinter.CTkFrame):
             self.progress_bar.set(float(current_pass) / float(total_passes))
             self.progress_label.configure(text=f"Status: Pass {current_pass}/{total_passes} - {status_message}")
         except (IndexError, ValueError): pass
-
     def wipe_finished(self, success, device_data):
         self.progress_bar.set(1.0)
         if success:
@@ -388,13 +378,11 @@ class WipeProgressFrame(customtkinter.CTkFrame):
             self.log(f"❌ WIPE FAILED for /dev/{device_data['name']}. Halting queue.")
             self.device_queue.clear()
         self.process_next_in_queue()
-
     def update_timer(self):
         if self.process and self.process.poll() is None:
             elapsed = time.time() - self.start_time
             self.time_label.configure(text=f"Elapsed: {str(datetime.timedelta(seconds=int(elapsed)))}")
             self.after(1000, self.update_timer)
-
     def generate_certificate(self, device_data):
         self.log(f"Generating certificate for /dev/{device_data['name']}...")
         timestamp = datetime.datetime.now(datetime.timezone.utc)
