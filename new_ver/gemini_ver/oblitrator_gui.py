@@ -209,25 +209,34 @@ class App(customtkinter.CTk):
 
     def run_wipe_script(self, device_data):
         device_path = f"/dev/{device_data['name']}"
-        command = ['sudo', 'bash', WIPE_SCRIPT_PATH, device_path, 'OBLITERATE']
+        
+        # --- THIS IS THE CORRECTED LINE ---
+        # We remove 'sudo' because the main script is already running as root.
+        command = ['bash', WIPE_SCRIPT_PATH, device_path, 'OBLITERATE']
+        
+        # Add a log message to show exactly what command is being run
+        self.log(f"Executing command: {' '.join(command)}")
         
         try:
+            # The 'process' variable will now be correctly started with root rights
             process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1)
             
+            # Read stdout for progress updates
             for line in iter(process.stdout.readline, ''):
                 self.after(0, self.handle_script_output, line.strip())
 
-            process.wait()
+            process.wait() # Wait for the script to finish
             
+            # Check the result after it's done
             if process.returncode == 0:
                 self.after(0, self.finish_wipe, device_data, True)
             else:
                 stderr_output = process.stderr.read()
-                self.after(0, self.log, f"ERROR wiping {device_path}: {stderr_output}")
+                self.after(0, self.log, f"ERROR wiping {device_path}. Script failed with output:\n{stderr_output}")
                 self.after(0, self.finish_wipe, device_data, False)
 
         except Exception as e:
-            self.after(0, self.log, f"Failed to start wipe process: {e}")
+            self.after(0, self.log, f"CRITICAL FAILURE: Could not start wipe process: {e}")
             self.after(0, self.finish_wipe, device_data, False)
             
     def handle_script_output(self, line):
