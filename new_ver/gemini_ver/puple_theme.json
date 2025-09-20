@@ -35,6 +35,7 @@
   },
   "CTkLabel": {
     "corner_radius": 0,
+    "fg_color": "transparent",
     "text_color": ["#DCE4EE", "#DCE4EE"]
   },
   "CTkOptionMenu": {
