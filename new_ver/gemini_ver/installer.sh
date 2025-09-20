@@ -1,4 +1,4 @@
-#!/bin-bash
+#!/bin/bash
 # installer.sh - (Version 4 - Comprehensive)
 # Installs all dependencies for Obliterator, including core wiping utilities.
 
