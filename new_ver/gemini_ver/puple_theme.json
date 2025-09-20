@@ -76,6 +76,17 @@
     "label_fg_color": ["#423a4a", "#423a4a"],
     "label_text_color": ["#DCE4EE", "#DCE4EE"]
   },
+  "CTkSegmentedButton": {
+    "corner_radius": 6,
+    "border_width": 2,
+    "fg_color": ["#423a4a", "#423a4a"],
+    "selected_color": ["#705185", "#705185"],
+    "selected_hover_color": ["#84629c", "#84629c"],
+    "unselected_color": ["#423a4a", "#423a4a"],
+    "unselected_hover_color": ["#5a5263", "#5a5263"],
+    "text_color": ["#DCE4EE", "#DCE4EE"],
+    "text_color_disabled": ["#99929e", "#99929e"]
+  },
   "CTkTextbox": {
     "corner_radius": 6,
     "border_width": 2,
