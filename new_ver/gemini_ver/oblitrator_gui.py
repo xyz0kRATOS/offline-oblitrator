@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# obliterator_gui.py - (Version 7.1 - Attribute Error Hotfix)
+# obliterator_gui.py - (Version 7.2 - Final Attribute Hotfix)
 # GUI for the Obliterator Secure Wipe Tool
 
 import tkinter
@@ -18,27 +18,26 @@ from cryptography.hazmat.primitives.asymmetric import padding
 
 # --- Configuration ---
 APP_NAME = "Obliterator"
-APP_VERSION = "7.1-final"
+APP_VERSION = "7.2-final"
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 THEME_FILE = os.path.join(SCRIPT_DIR, "purple_theme.json")
 PRIVATE_KEY_PATH = os.path.join(SCRIPT_DIR, "keys/private_key.pem")
 CERT_DIR = os.path.join(SCRIPT_DIR, "certificates/")
 WIPE_SCRIPT_PATH = os.path.join(SCRIPT_DIR, "wipe_disk.sh")
 
-# --- [FIXED] Custom Textbox Widget ---
-# This class extends the standard CTkTextbox to allow for a custom scrollbar color.
+# --- [DEFINITIVE FIX] Corrected Custom Textbox Widget ---
 class CustomTextbox(customtkinter.CTkTextbox):
     def __init__(self, *args, scrollbar_button_color=None, **kwargs):
         super().__init__(*args, **kwargs)
 
-        # After the textbox is created, we access its internal scrollbars
-        # using their correct names and configure their color.
         if scrollbar_button_color is not None:
-            # The vertical scrollbar is named '_scrollbar'
-            if self._scrollbar is not None:
-                self._scrollbar.configure(button_color=scrollbar_button_color)
-            # The horizontal scrollbar is named '_h_scrollbar'
-            if self._h_scrollbar is not None:
+            # The internal name for the vertical scrollbar is '_v_scrollbar'.
+            # We use hasattr() to safely check if it exists before configuring it.
+            if hasattr(self, '_v_scrollbar') and self._v_scrollbar is not None:
+                self._v_scrollbar.configure(button_color=scrollbar_button_color)
+            
+            # The horizontal scrollbar is consistently named '_h_scrollbar'
+            if hasattr(self, '_h_scrollbar') and self._h_scrollbar is not None:
                 self._h_scrollbar.configure(button_color=scrollbar_button_color)
 
 # --- Main Application Controller ---
