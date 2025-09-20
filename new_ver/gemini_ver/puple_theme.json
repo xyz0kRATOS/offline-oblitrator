@@ -1,49 +1,74 @@
 {
   "CTk": {
-    "fg_color": ["#343638", "#343638"]
+    "fg_color": ["#2B2B2B", "#2B2B2B"]
   },
   "CTkToplevel": {
-    "fg_color": ["#343638", "#343638"]
+    "fg_color": ["#2B2B2B", "#2B2B2B"]
   },
   "CTkFrame": {
+    "corner_radius": 8,
+    "border_width": 0,
     "fg_color": ["#423a4a", "#423a4a"],
     "top_fg_color": ["#343638", "#343638"],
     "border_color": ["#5a5263", "#5a5263"]
   },
   "CTkButton": {
+    "corner_radius": 8,
+    "border_width": 0,
     "fg_color": ["#705185", "#705185"],
     "hover_color": ["#84629c", "#84629c"],
     "border_color": ["#9f7ab8", "#9f7ab8"],
     "text_color": ["#DCE4EE", "#DCE4EE"]
   },
   "CTkCheckBox": {
+    "corner_radius": 6,
+    "border_width": 1,
     "fg_color": ["#705185", "#705185"],
     "hover_color": ["#84629c", "#84629c"],
     "border_color": ["#9f7ab8", "#9f7ab8"]
   },
   "CTkEntry": {
+    "corner_radius": 8,
+    "border_width": 1,
     "fg_color": ["#2e2833", "#2e2833"],
     "border_color": ["#5a5263", "#5a5263"]
   },
   "CTkLabel": {
+    "corner_radius": 0,
     "text_color": ["#DCE4EE", "#DCE4EE"]
   },
   "CTkOptionMenu": {
+    "corner_radius": 8,
     "fg_color": ["#705185", "#705185"],
     "button_color": ["#84629c", "#84629c"],
     "button_hover_color": ["#9f7ab8", "#9f7ab8"]
   },
   "CTkProgressBar": {
+    "corner_radius": 1000,
+    "border_width": 0,
     "fg_color": ["#5a5263", "#5a5263"],
     "progress_color": ["#9f7ab8", "#9f7ab8"]
   },
   "CTkScrollbar": {
-    "fg_color": ["#2e2833", "#2e2833"],
+    "corner_radius": 1000,
+    "border_spacing": 4,
+    "fg_color": ["transparent", "transparent"],
     "button_color": ["#5a5263", "#5a5263"],
     "button_hover_color": ["#705185", "#705185"]
   },
   "CTkTextbox": {
+    "corner_radius": 8,
+    "border_width": 1,
     "fg_color": ["#2e2833", "#2e2833"],
     "border_color": ["#5a5263", "#5a5263"]
+  },
+  "CTkTabview": {
+    "corner_radius": 8,
+    "border_width": 1,
+    "border_color": ["#5a5263", "#5a5263"],
+    "fg_color": ["#423a4a", "#423a4a"],
+    "segmented_button_selected_color": ["#705185", "#705185"],
+    "segmented_button_unselected_color": ["#423a4a", "#423a4a"],
+    "segmented_button_selected_hover_color": ["#84629c", "#84629c"]
   }
 }
