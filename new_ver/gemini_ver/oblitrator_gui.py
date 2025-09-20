@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# obliterator_gui.py - (Version 3.0 - Splash Screen & Progress Bar Fix)
+# obliterator_gui.py - (Version 3.1 - Working Splash Screen)
 # GUI for the Obliterator Secure Wipe Tool
 
 import tkinter
@@ -11,27 +11,26 @@ import os
 import threading
 import base64
 
-# --- New Imports for the 'cryptography' library ---
+# --- Imports for the 'cryptography' library ---
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
 
 # --- Configuration ---
 APP_NAME = "Obliterator"
-APP_VERSION = "3.0-final"
+APP_VERSION = "3.1-final"
 THEME_COLOR = "dark-blue"
 PRIVATE_KEY_PATH = "/mnt/home/obliterator/keys/private_key.pem"
 CERT_DIR = "/mnt/home/obliterator/certificates/"
 WIPE_SCRIPT_PATH = "/mnt/home/obliterator/wipe_disk.sh"
 
-# --- [NEW] Splash Screen Window ---
+# --- Splash Screen Window ---
 class SplashScreen(customtkinter.CTkToplevel):
     def __init__(self, parent):
         super().__init__(parent)
         self.title("Obliterator")
         self.geometry("400x200")
-        self.overrideredirect(True) # Removes window decorations
+        self.overrideredirect(True)
 
-        # Center the splash screen
         parent.update_idletasks()
         parent_x = parent.winfo_x()
         parent_y = parent.winfo_y()
@@ -45,10 +44,9 @@ class SplashScreen(customtkinter.CTkToplevel):
         status_label = customtkinter.CTkLabel(self, text="Initializing and detecting devices...", font=("Roboto", 12))
         status_label.pack(pady=10)
 
-        # The splash screen will be destroyed by the main app after initialization
         self.lift()
 
-# --- Corrected Confirmation Dialog ---
+# --- Confirmation Dialog ---
 class ConfirmationDialog(customtkinter.CTkToplevel):
     def __init__(self, parent, device_info):
         super().__init__(parent)
@@ -97,12 +95,16 @@ class ConfirmationDialog(customtkinter.CTkToplevel):
         self.result = True
         self.destroy()
 
+# --- Main Application ---
 class App(customtkinter.CTk):
     def __init__(self):
         super().__init__()
         self.withdraw() # Hide main window initially
         
         splash = SplashScreen(self)
+        # --- THIS IS THE FIX ---
+        # Force the GUI to draw the splash screen before continuing
+        splash.update()
 
         self.title(APP_NAME)
         self.geometry("800x600")
@@ -245,25 +247,18 @@ class App(customtkinter.CTk):
             self.after(0, self.log, f"CRITICAL FAILURE: Could not start wipe process: {e}")
             self.after(0, self.finish_wipe, device_data, False)
             
-    # --- [NEW] Corrected Progress Bar Logic ---
     def handle_script_output(self, line):
         self.log(line)
         if line.startswith("PROGRESS:"):
-            # Example: "PROGRESS:1/5:Starting Pass 1..."
             try:
                 parts = line.split(':')
-                progress_part = parts[1] # "1/5"
+                progress_part = parts[1]
                 status_message = parts[2]
-                
                 current_pass, total_passes = map(int, progress_part.split('/'))
-                
-                # Update the progress bar based on the pass number
                 progress_value = float(current_pass) / float(total_passes)
                 self.progress_bar.set(progress_value)
-                
                 self.progress_label.configure(text=f"Status: Pass {current_pass} of {total_passes} - {status_message}")
             except (IndexError, ValueError):
-                # Fallback for unexpected log format
                 self.progress_label.configure(text="Status: Processing...")
         elif "STATUS:SUCCESS" in line:
             self.progress_bar.set(1)
