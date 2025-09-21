@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# obliterator_gui.py - (Version 15.0 - Final Path Fix)
+# obliterator_gui.py - (Version 13.0 - Improved Certificate & Test Run)
 # GUI for the Obliterator Secure Wipe Tool
 
 import tkinter
@@ -19,16 +19,15 @@ from PIL import Image, ImageTk
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
 
-# --- Configuration [CRITICAL] ---
-# All paths are built from this BASE_DIR. Ensure it matches your setup.
+# --- Configuration ---
 APP_NAME = "OBLITERATOR"
-APP_VERSION = "15.0-final"
-BASE_DIR = "/my-applications/obliterator"
-THEME_FILE = os.path.join(BASE_DIR, "purple_theme.json")
-LOGO_FILE = os.path.join(BASE_DIR, "logo.png") 
-PRIVATE_KEY_PATH = os.path.join(BASE_DIR, "keys/private_key.pem")
-CERT_DIR = os.path.join(BASE_DIR, "certificates/")
-WIPE_SCRIPT_PATH = os.path.join(BASE_DIR, "wipe_disk.sh")
+APP_VERSION = "13.0-final"
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+THEME_FILE = os.path.join(SCRIPT_DIR, "purple_theme.json")
+LOGO_FILE = os.path.join(SCRIPT_DIR, "logo.png") 
+PRIVATE_KEY_PATH = os.path.join(SCRIPT_DIR, "keys/private_key.pem")
+CERT_DIR = os.path.join(SCRIPT_DIR, "certificates/")
+WIPE_SCRIPT_PATH = os.path.join(SCRIPT_DIR, "wipe_disk.sh")
 
 # --- Font Definitions ---
 FONT_HEADER = ("Roboto", 42, "bold")
@@ -66,8 +65,6 @@ class App(customtkinter.CTk):
 
         self.frames = {}
         self.devices_to_wipe = []
-        
-        self.signing_key_present = os.path.exists(PRIVATE_KEY_PATH)
 
         for F in (SplashFrame, MainFrame, ConfirmationFrame, WipeProgressFrame):
             frame = F(self.container, self)
@@ -125,8 +122,10 @@ class MainFrame(customtkinter.CTkFrame):
         self.device_checkboxes = {}
 
         self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(0, weight=0); self.grid_rowconfigure(1, weight=1)
-        self.grid_rowconfigure(2, weight=2); self.grid_rowconfigure(3, weight=0)
+        self.grid_rowconfigure(0, weight=0)
+        self.grid_rowconfigure(1, weight=1)
+        self.grid_rowconfigure(2, weight=2)
+        self.grid_rowconfigure(3, weight=0)
         
         header_frame = customtkinter.CTkFrame(self, fg_color="transparent")
         header_frame.grid(row=0, column=0, pady=(10, 0), padx=20, sticky="ew")
@@ -166,26 +165,14 @@ class MainFrame(customtkinter.CTkFrame):
         
         footer_frame = customtkinter.CTkFrame(self, fg_color="transparent")
         footer_frame.grid(row=3, column=0, pady=20, padx=20, sticky="e")
-        
-        self.key_status_label = customtkinter.CTkLabel(footer_frame, text="", font=FONT_BODY)
-        self.key_status_label.pack(side="left", padx=20)
-        
         self.wipe_button = customtkinter.CTkButton(footer_frame, text="Proceed to Final Confirmation...", font=FONT_BODY, state="disabled", 
                                                  fg_color="#8B0000", hover_color="#A52A2A",
                                                  command=self.confirm_wipe)
-        self.wipe_button.pack(side="right")
+        self.wipe_button.pack()
     
     def on_show(self):
-        self.update_key_status()
         self.populate_devices()
         self.display_host_system_info()
-
-    def update_key_status(self):
-        if self.controller.signing_key_present:
-            self.key_status_label.configure(text="✅ Signing Key Found", text_color="green")
-        else:
-            self.key_status_label.configure(text="❌ Signing Key Missing! Certificates cannot be generated.", text_color="red")
-        self.update_selection_status()
 
     def get_host_system_info(self):
         details = {}
@@ -212,15 +199,8 @@ class MainFrame(customtkinter.CTkFrame):
         try:
             result = subprocess.run(['smartctl', '-i', '--json', dev_path], capture_output=True, text=True, check=True)
             data = json.loads(result.stdout)
-            lsblk_result = subprocess.run(['lsblk', '-d', '-n', '-o', 'ROTA', dev_path], capture_output=True, text=True, check=True)
-            is_rotational = lsblk_result.stdout.strip() == '1'
-            return {
-                'manufacturer': data.get('vendor', 'Unknown'),
-                'model': data.get('model_name', 'N/A'),
-                'serial_number': data.get('serial_number', 'N/A'),
-                'media_type': 'Magnetic' if is_rotational else 'Flash Memory'
-            }
-        except Exception: return {}
+            return {'model': data.get('model_name', 'N/A'), 'serial_number': data.get('serial_number', 'N/A'), 'size_bytes': data.get('user_capacity', {}).get('bytes', 0)}
+        except Exception: return {'size_bytes': 0}
 
     def populate_devices(self):
         for checkbox in self.device_checkboxes.values(): checkbox.destroy()
@@ -240,8 +220,7 @@ class MainFrame(customtkinter.CTkFrame):
 
     def update_selection_status(self):
         selected_devs_data = [info["data"] for path, info in self.device_checkboxes.items() if info["var"].get()]
-        can_wipe = selected_devs_data and self.controller.signing_key_present
-        self.wipe_button.configure(state="normal" if can_wipe else "disabled")
+        self.wipe_button.configure(state="normal" if selected_devs_data else "disabled")
         self.display_drive_details(selected_devs_data)
 
     def display_drive_details(self, selected_devs):
@@ -296,6 +275,7 @@ class ConfirmationFrame(customtkinter.CTkFrame):
     def check_token(self, event):
         self.confirm_button.configure(state="normal" if self.entry.get() == "OBLITERATE" else "disabled")
 
+# --- [MODIFIED] The entire WipeProgressFrame class is updated ---
 class WipeProgressFrame(customtkinter.CTkFrame):
     def __init__(self, parent, controller):
         super().__init__(parent)
@@ -303,15 +283,22 @@ class WipeProgressFrame(customtkinter.CTkFrame):
         self.process, self.start_time = None, 0
         self.device_queue, self.current_device_index, self.total_devices = [], 0, 0
         self.current_device_total_size = 0
+        
         self.grid_columnconfigure(0, weight=1); self.grid_rowconfigure(0, weight=1)
         center_frame = customtkinter.CTkFrame(self); center_frame.grid(row=0, column=0)
+        
         self.overall_title_label = customtkinter.CTkLabel(center_frame, text="", font=FONT_SUBHEADER); self.overall_title_label.pack(pady=(20, 0), padx=50)
         self.title_label = customtkinter.CTkLabel(center_frame, text="Wiping Drive...", font=FONT_BODY_BOLD); self.title_label.pack(pady=(0,20), padx=50)
+        
+        # --- Change 1: Progress bar is now 'indeterminate' (continuous) ---
         self.progress_label = customtkinter.CTkLabel(center_frame, text="Status: Initializing...", font=FONT_BODY); self.progress_label.pack(pady=10, padx=20)
         self.progress_bar = customtkinter.CTkProgressBar(center_frame, width=500, mode='indeterminate'); self.progress_bar.pack(pady=10, padx=20)
+        
+        # --- Change 2: Simplified info frame with Speed removed and "Wiped" text changed ---
         info_frame = customtkinter.CTkFrame(center_frame, fg_color="transparent"); info_frame.pack(pady=20, padx=20, fill="x"); info_frame.grid_columnconfigure((0, 1), weight=1)
         self.time_label = customtkinter.CTkLabel(info_frame, text="Elapsed: 00:00:00", font=FONT_MONO); self.time_label.grid(row=0, column=0, sticky="w")
         self.data_label = customtkinter.CTkLabel(info_frame, text="Overwritten: 0.00 / 0.00 GiB", font=FONT_MONO); self.data_label.grid(row=0, column=1, sticky="e")
+        
         self.log_textbox = CustomTextbox(center_frame, height=250, width=600, state="disabled", font=FONT_MONO, scrollbar_button_color="#FFD700")
         self.log_textbox.pack(pady=10, padx=20)
         self.finish_button = customtkinter.CTkButton(center_frame, text="Return to Dashboard", font=FONT_BODY, command=lambda: controller.show_frame(MainFrame))
@@ -357,6 +344,7 @@ class WipeProgressFrame(customtkinter.CTkFrame):
         except Exception as e: self.log(f"CRITICAL FAILURE: {e}")
 
     def read_stream(self, stream, queue):
+        """Reads a stream char by char to handle pv's carriage returns."""
         buffer = ''
         while True:
             char = stream.read(1)
@@ -381,15 +369,19 @@ class WipeProgressFrame(customtkinter.CTkFrame):
             while True:
                 line = q_err.get_nowait().strip()
                 if any(unit in line for unit in ["KiB", "MiB", "GiB", "TiB"]):
-                    try:
-                        wiped_raw = line.split()[0]
-                        self.data_label.configure(text=f"Overwritten: {wiped_raw} / {self.bytes_to_gib_str(self.current_device_total_size)}")
-                    except IndexError: pass
+                    self.update_data_overwritten(line)
                 else: self.log(f"ERR: {line}")
         except Empty: pass
         
         if self.process.poll() is None: self.after(100, self.check_queues, q_out, q_err, device_data)
         elif self.process.returncode != 0: self.wipe_finished(False, device_data)
+
+    def update_data_overwritten(self, line):
+        """Correctly parses pv's stderr to update the data label."""
+        try:
+            wiped_raw = line.split()[0]
+            self.data_label.configure(text=f"Overwritten: {wiped_raw} / {self.bytes_to_gib_str(self.current_device_total_size)}")
+        except IndexError: pass
 
     def bytes_to_gib_str(self, num_bytes):
         if num_bytes == 0: return "0.00 GiB"
