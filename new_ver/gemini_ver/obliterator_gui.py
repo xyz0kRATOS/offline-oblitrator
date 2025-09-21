@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# obliterator_gui.py - (Version 12.0 - Final Layout)
+# obliterator_gui.py - (Version 12.1 - Wipe Page Update)
 # GUI for the Obliterator Secure Wipe Tool
 
 import tkinter
@@ -21,7 +21,7 @@ from cryptography.hazmat.primitives.asymmetric import padding
 
 # --- Configuration ---
 APP_NAME = "OBLITERATOR"
-APP_VERSION = "12.0-final"
+APP_VERSION = "12.1-final"
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 THEME_FILE = os.path.join(SCRIPT_DIR, "purple_theme.json")
 LOGO_FILE = os.path.join(SCRIPT_DIR, "logo.png") 
@@ -115,21 +115,18 @@ class MainFrame(customtkinter.CTkFrame):
         self.controller = controller
         self.device_checkboxes = {}
 
-        # --- [MODIFIED] New Layout Structure ---
         self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(0, weight=0)  # Header
-        self.grid_rowconfigure(1, weight=1)  # Drive Selection
-        self.grid_rowconfigure(2, weight=2)  # Details Boxes
-        self.grid_rowconfigure(3, weight=0)  # Footer
+        self.grid_rowconfigure(0, weight=0)
+        self.grid_rowconfigure(1, weight=1)
+        self.grid_rowconfigure(2, weight=2)
+        self.grid_rowconfigure(3, weight=0)
         
-        # --- Header (Text instead of Logo) ---
         header_frame = customtkinter.CTkFrame(self, fg_color="transparent")
         header_frame.grid(row=0, column=0, pady=(10, 0), padx=20, sticky="ew")
         header_frame.grid_columnconfigure(0, weight=1)
         header_label = customtkinter.CTkLabel(header_frame, text=APP_NAME, font=FONT_HEADER)
         header_label.grid(row=0, column=0, pady=10)
 
-        # --- Drive Selection (Top, Horizontal) ---
         drive_list_frame = customtkinter.CTkFrame(self)
         drive_list_frame.grid(row=1, column=0, pady=10, padx=20, sticky="nsew")
         drive_list_frame.grid_columnconfigure(0, weight=1); drive_list_frame.grid_rowconfigure(1, weight=1)
@@ -139,13 +136,11 @@ class MainFrame(customtkinter.CTkFrame):
         self.scrollable_drive_list = customtkinter.CTkScrollableFrame(drive_list_frame)
         self.scrollable_drive_list.grid(row=1, column=0, pady=5, padx=10, sticky="nsew")
 
-        # --- Details Container (Bottom, 2 Columns) ---
         details_container = customtkinter.CTkFrame(self, fg_color="transparent")
         details_container.grid(row=2, column=0, pady=10, padx=20, sticky="nsew")
         details_container.grid_columnconfigure((0, 1), weight=1)
         details_container.grid_rowconfigure(0, weight=1)
 
-        # --- Drive Details Box (Bottom Left) ---
         drive_details_frame = customtkinter.CTkFrame(details_container)
         drive_details_frame.grid(row=0, column=0, padx=(0, 10), sticky="nsew")
         drive_details_frame.grid_columnconfigure(0, weight=1); drive_details_frame.grid_rowconfigure(1, weight=1)
@@ -154,7 +149,6 @@ class MainFrame(customtkinter.CTkFrame):
         self.details_textbox = CustomTextbox(drive_details_frame, state="disabled", font=FONT_MONO, scrollbar_button_color="#FFD700")
         self.details_textbox.grid(row=1, column=0, pady=5, padx=10, sticky="nsew")
 
-        # --- Host System Box (Bottom Right) ---
         host_details_frame = customtkinter.CTkFrame(details_container)
         host_details_frame.grid(row=0, column=1, padx=(10, 0), sticky="nsew")
         host_details_frame.grid_columnconfigure(0, weight=1); host_details_frame.grid_rowconfigure(1, weight=1)
@@ -163,11 +157,10 @@ class MainFrame(customtkinter.CTkFrame):
         self.host_details_textbox = CustomTextbox(host_details_frame, state="disabled", font=FONT_MONO, scrollbar_button_color="#FFD700")
         self.host_details_textbox.grid(row=1, column=0, pady=5, padx=10, sticky="nsew")
         
-        # --- Footer ---
         footer_frame = customtkinter.CTkFrame(self, fg_color="transparent")
         footer_frame.grid(row=3, column=0, pady=20, padx=20, sticky="e")
         self.wipe_button = customtkinter.CTkButton(footer_frame, text="Proceed to Final Confirmation...", font=FONT_BODY, state="disabled", 
-                                                 fg_color="#8B0000", hover_color="#A52A2A", # Maroon Colors
+                                                 fg_color="#8B0000", hover_color="#A52A2A",
                                                  command=self.confirm_wipe)
         self.wipe_button.pack()
     
@@ -262,7 +255,7 @@ class ConfirmationFrame(customtkinter.CTkFrame):
         button_frame = customtkinter.CTkFrame(self, fg_color="transparent")
         button_frame.pack(pady=40)
         self.confirm_button = customtkinter.CTkButton(button_frame, text="Confirm and Wipe", font=FONT_BODY, state="disabled",
-                                                      fg_color="#8B0000", hover_color="#A52A2A", # Maroon Colors
+                                                      fg_color="#8B0000", hover_color="#A52A2A",
                                                       command=self.controller.execute_wipe)
         self.confirm_button.pack(side="left", padx=10)
         cancel_button = customtkinter.CTkButton(button_frame, text="Cancel", font=FONT_BODY, command=lambda: self.controller.show_frame(MainFrame))
@@ -287,39 +280,48 @@ class WipeProgressFrame(customtkinter.CTkFrame):
         center_frame = customtkinter.CTkFrame(self); center_frame.grid(row=0, column=0)
         self.overall_title_label = customtkinter.CTkLabel(center_frame, text="", font=FONT_SUBHEADER); self.overall_title_label.pack(pady=(20, 0), padx=50)
         self.title_label = customtkinter.CTkLabel(center_frame, text="Wiping Drive...", font=FONT_BODY_BOLD); self.title_label.pack(pady=(0,20), padx=50)
+        
+        # --- [MODIFIED] Progress Label and Bar ---
         self.progress_label = customtkinter.CTkLabel(center_frame, text="Status: Initializing...", font=FONT_BODY); self.progress_label.pack(pady=10, padx=20)
-        self.progress_bar = customtkinter.CTkProgressBar(center_frame, width=500); self.progress_bar.set(0); self.progress_bar.pack(pady=10, padx=20)
+        self.progress_bar = customtkinter.CTkProgressBar(center_frame, width=500, mode='indeterminate'); self.progress_bar.pack(pady=10, padx=20)
+        
         info_frame = customtkinter.CTkFrame(center_frame, fg_color="transparent"); info_frame.pack(pady=20, padx=20, fill="x"); info_frame.grid_columnconfigure((0, 1, 2), weight=1)
         self.time_label = customtkinter.CTkLabel(info_frame, text="Elapsed: 00:00:00", font=FONT_MONO); self.time_label.grid(row=0, column=0, sticky="w")
-        self.data_label = customtkinter.CTkLabel(info_frame, text="Wiped: 0.00 / 0.00 GiB", font=FONT_MONO); self.data_label.grid(row=0, column=1)
+        self.data_label = customtkinter.CTkLabel(info_frame, text="Wiped: 0.00 / 0.00 GiB", font=FONT_MONO); self.data_label.grid(row=0, column=1) 
         self.speed_label = customtkinter.CTkLabel(info_frame, text="Speed: 0 MB/s", font=FONT_MONO); self.speed_label.grid(row=0, column=2, sticky="e")
         self.log_textbox = CustomTextbox(center_frame, height=250, width=600, state="disabled", font=FONT_MONO, scrollbar_button_color="#FFD700")
         self.log_textbox.pack(pady=10, padx=20)
         self.finish_button = customtkinter.CTkButton(center_frame, text="Return to Dashboard", font=FONT_BODY, command=lambda: controller.show_frame(MainFrame))
+    
     def log(self, message):
         self.log_textbox.configure(state="normal"); self.log_textbox.insert("end", f"{message}\n"); self.log_textbox.see("end"); self.log_textbox.configure(state="disabled")
+
     def start_wipe_queue(self, devices):
         self.device_queue = list(devices)
         self.current_device_index, self.total_devices = 0, len(devices)
         self.log_textbox.configure(state="normal"); self.log_textbox.delete("1.0", "end"); self.log_textbox.configure(state="disabled")
         self.finish_button.pack_forget()
         self.process_next_in_queue()
+
     def process_next_in_queue(self):
         if not self.device_queue:
             self.overall_title_label.configure(text="All Wipes Complete!")
             self.log("✅ All selected drives have been processed.")
             self.finish_button.pack(pady=20)
+            self.progress_bar.stop()
             return
+        
+        self.progress_bar.start()
         self.current_device_index += 1
         device_data = self.device_queue.pop(0)
         scraped_info = self.controller.frames[MainFrame].get_drive_details(f"/dev/{device_data['name']}")
         self.current_device_total_size = scraped_info.get('size_bytes', 0)
         self.data_label.configure(text=f"Wiped: 0.00 / {self.bytes_to_gib_str(self.current_device_total_size)}")
-        self.progress_bar.set(0)
         self.overall_title_label.configure(text=f"Processing Drive {self.current_device_index} of {self.total_devices}")
         self.title_label.configure(text=f"Wiping /dev/{device_data['name']} ({device_data['size']})")
         self.log("\n" + ("-"*50) + f"\nStarting wipe for /dev/{device_data['name']}\n" + ("-"*50))
         threading.Thread(target=self.run_wipe_script, args=(device_data,), daemon=True).start()
+
     def run_wipe_script(self, device_data):
         self.start_time = time.time(); self.after(1000, self.update_timer)
         device_path = f"/dev/{device_data['name']}"; command = ['bash', WIPE_SCRIPT_PATH, device_path, 'OBLITERATE']
@@ -330,45 +332,52 @@ class WipeProgressFrame(customtkinter.CTkFrame):
             threading.Thread(target=self.read_stream, args=(self.process.stderr, q_err), daemon=True).start()
             self.after(100, self.check_queues, q_out, q_err, device_data)
         except Exception as e: self.log(f"CRITICAL FAILURE: {e}")
+
     def read_stream(self, stream, queue):
         for line in iter(stream.readline, ''): queue.put(line)
+
     def check_queues(self, q_out, q_err, device_data):
         try:
             while True:
                 line = q_out.get_nowait().strip()
                 self.log(f"OUT: {line}")
-                if line.startswith("PROGRESS:"): self.update_progress_from_line(line)
+                if line.startswith("PROGRESS:"): self.update_pass_status(line)
                 elif "STATUS:SUCCESS" in line: self.wipe_finished(True, device_data); return
         except Empty: pass
         try:
             while True:
                 line = q_err.get_nowait().strip()
                 if "MiB/s" in line or "GiB/s" in line:
-                    parts = line.split()
-                    try:
-                        wiped_raw, speed = parts[0], parts[-1].strip("[]")
-                        wiped_bytes = 0
-                        if   wiped_raw.endswith("GiB"): wiped_bytes = float(wiped_raw[:-3]) * (1024**3)
-                        elif wiped_raw.endswith("MiB"): wiped_bytes = float(wiped_raw[:-3]) * (1024**2)
-                        self.data_label.configure(text=f"Wiped: {self.bytes_to_gib_str(wiped_bytes)} / {self.bytes_to_gib_str(self.current_device_total_size)}")
-                        self.speed_label.configure(text=f"Speed: {speed}")
-                    except (IndexError, ValueError): pass
+                    self.update_data_wiped(line, device_data)
                 else: self.log(f"ERR: {line}")
         except Empty: pass
         if self.process.poll() is None: self.after(100, self.check_queues, q_out, q_err, device_data)
         elif self.process.returncode != 0: self.wipe_finished(False, device_data)
+    
+    def update_data_wiped(self, line, device_data):
+        """Parses pv's stderr to update data labels."""
+        try:
+            parts = line.split()
+            wiped_raw, speed = parts[0], parts[-1].strip("[]")
+            self.progress_label.configure(text=f"Wiping: {wiped_raw} / {device_data['size']}")
+            self.speed_label.configure(text=f"Speed: {speed}")
+        except (IndexError, ValueError): pass
+
     def bytes_to_gib_str(self, num_bytes):
         if num_bytes == 0: return "0.00 GiB"
         return f"{num_bytes / (1024**3):.2f} GiB"
-    def update_progress_from_line(self, line):
+
+    def update_pass_status(self, line):
+        """Updates the log with the current pass, but doesn't change the progress bar."""
         try:
             parts = line.split(':'); progress_part, status_message = parts[1], parts[2]
             current_pass, total_passes = map(int, progress_part.split('/'))
-            self.progress_bar.set(float(current_pass) / float(total_passes))
-            self.progress_label.configure(text=f"Status: Pass {current_pass}/{total_passes} - {status_message}")
+            # self.progress_bar is now indeterminate, we don't set its value.
+            # We can update the log or a secondary label if needed.
         except (IndexError, ValueError): pass
+
     def wipe_finished(self, success, device_data):
-        self.progress_bar.set(1.0)
+        self.progress_bar.stop()
         if success:
             self.progress_label.configure(text="Status: Wipe and Verification Complete!")
             self.log(f"✅ WIPE SUCCESSFUL for /dev/{device_data['name']}")
@@ -378,11 +387,13 @@ class WipeProgressFrame(customtkinter.CTkFrame):
             self.log(f"❌ WIPE FAILED for /dev/{device_data['name']}. Halting queue.")
             self.device_queue.clear()
         self.process_next_in_queue()
+
     def update_timer(self):
         if self.process and self.process.poll() is None:
             elapsed = time.time() - self.start_time
             self.time_label.configure(text=f"Elapsed: {str(datetime.timedelta(seconds=int(elapsed)))}")
             self.after(1000, self.update_timer)
+
     def generate_certificate(self, device_data):
         self.log(f"Generating certificate for /dev/{device_data['name']}...")
         timestamp = datetime.datetime.now(datetime.timezone.utc)
