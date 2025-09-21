@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# obliterator_gui.py - (Version 12.1 - Wipe Page Update)
+# obliterator_gui.py - (Version 13.0 - Wipe Page Refinements)
 # GUI for the Obliterator Secure Wipe Tool
 
 import tkinter
@@ -21,7 +21,7 @@ from cryptography.hazmat.primitives.asymmetric import padding
 
 # --- Configuration ---
 APP_NAME = "OBLITERATOR"
-APP_VERSION = "12.1-final"
+APP_VERSION = "13.0-final"
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 THEME_FILE = os.path.join(SCRIPT_DIR, "purple_theme.json")
 LOGO_FILE = os.path.join(SCRIPT_DIR, "logo.png") 
@@ -54,7 +54,9 @@ class App(customtkinter.CTk):
         else: print(f"Warning: Theme file not found at {THEME_FILE}.")
         
         self.title(APP_NAME)
-        self.geometry("1200x800")
+        self.attributes('-fullscreen', True)
+        self.bind("<Escape>", self.exit_fullscreen)
+
         self.grid_rowconfigure(0, weight=1); self.grid_columnconfigure(0, weight=1)
 
         self.container = customtkinter.CTkFrame(self, fg_color="transparent")
@@ -70,6 +72,10 @@ class App(customtkinter.CTk):
             frame.grid(row=0, column=0, sticky="nsew")
 
         self.show_frame(SplashFrame)
+        
+    def exit_fullscreen(self, event=None):
+        self.attributes('-fullscreen', False)
+        self.geometry("1200x800")
 
     def show_frame(self, cont):
         frame = self.frames[cont]
@@ -281,14 +287,14 @@ class WipeProgressFrame(customtkinter.CTkFrame):
         self.overall_title_label = customtkinter.CTkLabel(center_frame, text="", font=FONT_SUBHEADER); self.overall_title_label.pack(pady=(20, 0), padx=50)
         self.title_label = customtkinter.CTkLabel(center_frame, text="Wiping Drive...", font=FONT_BODY_BOLD); self.title_label.pack(pady=(0,20), padx=50)
         
-        # --- [MODIFIED] Progress Label and Bar ---
+        # --- [MODIFIED] Progress Bar and Labels ---
         self.progress_label = customtkinter.CTkLabel(center_frame, text="Status: Initializing...", font=FONT_BODY); self.progress_label.pack(pady=10, padx=20)
         self.progress_bar = customtkinter.CTkProgressBar(center_frame, width=500, mode='indeterminate'); self.progress_bar.pack(pady=10, padx=20)
         
-        info_frame = customtkinter.CTkFrame(center_frame, fg_color="transparent"); info_frame.pack(pady=20, padx=20, fill="x"); info_frame.grid_columnconfigure((0, 1, 2), weight=1)
+        info_frame = customtkinter.CTkFrame(center_frame, fg_color="transparent"); info_frame.pack(pady=20, padx=20, fill="x"); info_frame.grid_columnconfigure((0, 1), weight=1)
         self.time_label = customtkinter.CTkLabel(info_frame, text="Elapsed: 00:00:00", font=FONT_MONO); self.time_label.grid(row=0, column=0, sticky="w")
-        self.data_label = customtkinter.CTkLabel(info_frame, text="Wiped: 0.00 / 0.00 GiB", font=FONT_MONO); self.data_label.grid(row=0, column=1) 
-        self.speed_label = customtkinter.CTkLabel(info_frame, text="Speed: 0 MB/s", font=FONT_MONO); self.speed_label.grid(row=0, column=2, sticky="e")
+        self.data_label = customtkinter.CTkLabel(info_frame, text="Overwritten: 0.00 / 0.00 GiB", font=FONT_MONO); self.data_label.grid(row=0, column=1, sticky="e")
+        
         self.log_textbox = CustomTextbox(center_frame, height=250, width=600, state="disabled", font=FONT_MONO, scrollbar_button_color="#FFD700")
         self.log_textbox.pack(pady=10, padx=20)
         self.finish_button = customtkinter.CTkButton(center_frame, text="Return to Dashboard", font=FONT_BODY, command=lambda: controller.show_frame(MainFrame))
@@ -316,7 +322,7 @@ class WipeProgressFrame(customtkinter.CTkFrame):
         device_data = self.device_queue.pop(0)
         scraped_info = self.controller.frames[MainFrame].get_drive_details(f"/dev/{device_data['name']}")
         self.current_device_total_size = scraped_info.get('size_bytes', 0)
-        self.data_label.configure(text=f"Wiped: 0.00 / {self.bytes_to_gib_str(self.current_device_total_size)}")
+        self.data_label.configure(text=f"Overwritten: 0.00 / {self.bytes_to_gib_str(self.current_device_total_size)}")
         self.overall_title_label.configure(text=f"Processing Drive {self.current_device_index} of {self.total_devices}")
         self.title_label.configure(text=f"Wiping /dev/{device_data['name']} ({device_data['size']})")
         self.log("\n" + ("-"*50) + f"\nStarting wipe for /dev/{device_data['name']}\n" + ("-"*50))
@@ -347,20 +353,19 @@ class WipeProgressFrame(customtkinter.CTkFrame):
         try:
             while True:
                 line = q_err.get_nowait().strip()
-                if "MiB/s" in line or "GiB/s" in line:
-                    self.update_data_wiped(line, device_data)
+                if any(unit in line for unit in ["KiB", "MiB", "GiB", "TiB"]):
+                    self.update_data_overwritten(line)
                 else: self.log(f"ERR: {line}")
         except Empty: pass
         if self.process.poll() is None: self.after(100, self.check_queues, q_out, q_err, device_data)
         elif self.process.returncode != 0: self.wipe_finished(False, device_data)
     
-    def update_data_wiped(self, line, device_data):
+    def update_data_overwritten(self, line):
         """Parses pv's stderr to update data labels."""
         try:
-            parts = line.split()
-            wiped_raw, speed = parts[0], parts[-1].strip("[]")
-            self.progress_label.configure(text=f"Wiping: {wiped_raw} / {device_data['size']}")
-            self.speed_label.configure(text=f"Speed: {speed}")
+            wiped_raw = line.split()[0]
+            # This logic now correctly updates the data_label, not the progress_label
+            self.data_label.configure(text=f"Overwritten: {wiped_raw} / {self.bytes_to_gib_str(self.current_device_total_size)}")
         except (IndexError, ValueError): pass
 
     def bytes_to_gib_str(self, num_bytes):
@@ -368,12 +373,10 @@ class WipeProgressFrame(customtkinter.CTkFrame):
         return f"{num_bytes / (1024**3):.2f} GiB"
 
     def update_pass_status(self, line):
-        """Updates the log with the current pass, but doesn't change the progress bar."""
         try:
             parts = line.split(':'); progress_part, status_message = parts[1], parts[2]
             current_pass, total_passes = map(int, progress_part.split('/'))
-            # self.progress_bar is now indeterminate, we don't set its value.
-            # We can update the log or a secondary label if needed.
+            self.progress_label.configure(text=f"Status: Pass {current_pass} of {total_passes} - {status_message}")
         except (IndexError, ValueError): pass
 
     def wipe_finished(self, success, device_data):
