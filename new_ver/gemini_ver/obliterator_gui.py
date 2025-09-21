@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# obliterator_gui.py - (Version 12.1 - Wipe Page Update)
+# obliterator_gui.py - (Version 15.0 - Comprehensive Certificate)
 # GUI for the Obliterator Secure Wipe Tool
 
 import tkinter
@@ -19,15 +19,16 @@ from PIL import Image, ImageTk
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
 
-# --- Configuration ---
+# --- Configuration [MODIFIED] ---
+# All paths updated to your new directory structure.
 APP_NAME = "OBLITERATOR"
-APP_VERSION = "12.1-final"
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-THEME_FILE = os.path.join(SCRIPT_DIR, "purple_theme.json")
-LOGO_FILE = os.path.join(SCRIPT_DIR, "logo.png") 
-PRIVATE_KEY_PATH = os.path.join(SCRIPT_DIR, "keys/private_key.pem")
-CERT_DIR = os.path.join(SCRIPT_DIR, "certificates/")
-WIPE_SCRIPT_PATH = os.path.join(SCRIPT_DIR, "wipe_disk.sh")
+APP_VERSION = "15.0-final"
+BASE_DIR = "/my-applications/obliterator"
+THEME_FILE = os.path.join(BASE_DIR, "purple_theme.json")
+LOGO_FILE = os.path.join(BASE_DIR, "logo.png") 
+PRIVATE_KEY_PATH = os.path.join(BASE_DIR, "keys/private_key.pem")
+CERT_DIR = os.path.join(BASE_DIR, "certificates/")
+WIPE_SCRIPT_PATH = os.path.join(BASE_DIR, "wipe_disk.sh")
 
 # --- Font Definitions ---
 FONT_HEADER = ("Roboto", 42, "bold")
@@ -54,7 +55,9 @@ class App(customtkinter.CTk):
         else: print(f"Warning: Theme file not found at {THEME_FILE}.")
         
         self.title(APP_NAME)
-        self.geometry("1920X1080")
+        self.attributes('-fullscreen', True)
+        self.bind("<Escape>", self.exit_fullscreen)
+
         self.grid_rowconfigure(0, weight=1); self.grid_columnconfigure(0, weight=1)
 
         self.container = customtkinter.CTkFrame(self, fg_color="transparent")
@@ -63,6 +66,8 @@ class App(customtkinter.CTk):
 
         self.frames = {}
         self.devices_to_wipe = []
+        
+        self.signing_key_present = os.path.exists(PRIVATE_KEY_PATH)
 
         for F in (SplashFrame, MainFrame, ConfirmationFrame, WipeProgressFrame):
             frame = F(self.container, self)
@@ -70,6 +75,10 @@ class App(customtkinter.CTk):
             frame.grid(row=0, column=0, sticky="nsew")
 
         self.show_frame(SplashFrame)
+        
+    def exit_fullscreen(self, event=None):
+        self.attributes('-fullscreen', False)
+        self.geometry("1200x800")
 
     def show_frame(self, cont):
         frame = self.frames[cont]
@@ -116,10 +125,8 @@ class MainFrame(customtkinter.CTkFrame):
         self.device_checkboxes = {}
 
         self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(0, weight=0)
-        self.grid_rowconfigure(1, weight=1)
-        self.grid_rowconfigure(2, weight=2)
-        self.grid_rowconfigure(3, weight=0)
+        self.grid_rowconfigure(0, weight=0); self.grid_rowconfigure(1, weight=1)
+        self.grid_rowconfigure(2, weight=2); self.grid_rowconfigure(3, weight=0)
         
         header_frame = customtkinter.CTkFrame(self, fg_color="transparent")
         header_frame.grid(row=0, column=0, pady=(10, 0), padx=20, sticky="ew")
@@ -159,14 +166,26 @@ class MainFrame(customtkinter.CTkFrame):
         
         footer_frame = customtkinter.CTkFrame(self, fg_color="transparent")
         footer_frame.grid(row=3, column=0, pady=20, padx=20, sticky="e")
+        
+        self.key_status_label = customtkinter.CTkLabel(footer_frame, text="", font=FONT_BODY)
+        self.key_status_label.pack(side="left", padx=20)
+        
         self.wipe_button = customtkinter.CTkButton(footer_frame, text="Proceed to Final Confirmation...", font=FONT_BODY, state="disabled", 
                                                  fg_color="#8B0000", hover_color="#A52A2A",
                                                  command=self.confirm_wipe)
-        self.wipe_button.pack()
+        self.wipe_button.pack(side="right")
     
     def on_show(self):
+        self.update_key_status()
         self.populate_devices()
         self.display_host_system_info()
+
+    def update_key_status(self):
+        if self.controller.signing_key_present:
+            self.key_status_label.configure(text="✅ Signing Key Found", text_color="green")
+        else:
+            self.key_status_label.configure(text="❌ Signing Key Missing! Certificates cannot be generated.", text_color="red")
+        self.update_selection_status()
 
     def get_host_system_info(self):
         details = {}
@@ -193,8 +212,15 @@ class MainFrame(customtkinter.CTkFrame):
         try:
             result = subprocess.run(['smartctl', '-i', '--json', dev_path], capture_output=True, text=True, check=True)
             data = json.loads(result.stdout)
-            return {'model': data.get('model_name', 'N/A'), 'serial_number': data.get('serial_number', 'N/A'), 'size_bytes': data.get('user_capacity', {}).get('bytes', 0)}
-        except Exception: return {'size_bytes': 0}
+            lsblk_result = subprocess.run(['lsblk', '-d', '-n', '-o', 'ROTA', dev_path], capture_output=True, text=True, check=True)
+            is_rotational = lsblk_result.stdout.strip() == '1'
+            return {
+                'manufacturer': data.get('vendor', 'Unknown'),
+                'model': data.get('model_name', 'N/A'),
+                'serial_number': data.get('serial_number', 'N/A'),
+                'media_type': 'Magnetic' if is_rotational else 'Flash Memory'
+            }
+        except Exception: return {}
 
     def populate_devices(self):
         for checkbox in self.device_checkboxes.values(): checkbox.destroy()
@@ -214,7 +240,8 @@ class MainFrame(customtkinter.CTkFrame):
 
     def update_selection_status(self):
         selected_devs_data = [info["data"] for path, info in self.device_checkboxes.items() if info["var"].get()]
-        self.wipe_button.configure(state="normal" if selected_devs_data else "disabled")
+        can_wipe = selected_devs_data and self.controller.signing_key_present
+        self.wipe_button.configure(state="normal" if can_wipe else "disabled")
         self.display_drive_details(selected_devs_data)
 
     def display_drive_details(self, selected_devs):
@@ -276,20 +303,15 @@ class WipeProgressFrame(customtkinter.CTkFrame):
         self.process, self.start_time = None, 0
         self.device_queue, self.current_device_index, self.total_devices = [], 0, 0
         self.current_device_total_size = 0
-        
         self.grid_columnconfigure(0, weight=1); self.grid_rowconfigure(0, weight=1)
         center_frame = customtkinter.CTkFrame(self); center_frame.grid(row=0, column=0)
-        
         self.overall_title_label = customtkinter.CTkLabel(center_frame, text="", font=FONT_SUBHEADER); self.overall_title_label.pack(pady=(20, 0), padx=50)
         self.title_label = customtkinter.CTkLabel(center_frame, text="Wiping Drive...", font=FONT_BODY_BOLD); self.title_label.pack(pady=(0,20), padx=50)
         self.progress_label = customtkinter.CTkLabel(center_frame, text="Status: Initializing...", font=FONT_BODY); self.progress_label.pack(pady=10, padx=20)
-        
         self.progress_bar = customtkinter.CTkProgressBar(center_frame, width=500, mode='indeterminate'); self.progress_bar.pack(pady=10, padx=20)
-        
         info_frame = customtkinter.CTkFrame(center_frame, fg_color="transparent"); info_frame.pack(pady=20, padx=20, fill="x"); info_frame.grid_columnconfigure((0, 1), weight=1)
         self.time_label = customtkinter.CTkLabel(info_frame, text="Elapsed: 00:00:00", font=FONT_MONO); self.time_label.grid(row=0, column=0, sticky="w")
         self.data_label = customtkinter.CTkLabel(info_frame, text="Overwritten: 0.00 / 0.00 GiB", font=FONT_MONO); self.data_label.grid(row=0, column=1, sticky="e")
-        
         self.log_textbox = CustomTextbox(center_frame, height=250, width=600, state="disabled", font=FONT_MONO, scrollbar_button_color="#FFD700")
         self.log_textbox.pack(pady=10, padx=20)
         self.finish_button = customtkinter.CTkButton(center_frame, text="Return to Dashboard", font=FONT_BODY, command=lambda: controller.show_frame(MainFrame))
@@ -334,13 +356,11 @@ class WipeProgressFrame(customtkinter.CTkFrame):
             self.after(100, self.check_queues, q_out, q_err, device_data)
         except Exception as e: self.log(f"CRITICAL FAILURE: {e}")
 
-    # --- [FIXED] This function now correctly handles real-time output ---
     def read_stream(self, stream, queue):
-        """Reads a stream character by character and puts lines on a queue."""
         buffer = ''
         while True:
             char = stream.read(1)
-            if not char: # End of stream
+            if not char:
                 if buffer: queue.put(buffer)
                 break
             if char in ['\r', '\n']:
@@ -350,7 +370,6 @@ class WipeProgressFrame(customtkinter.CTkFrame):
                 buffer += char
 
     def check_queues(self, q_out, q_err, device_data):
-        
         try:
             while True:
                 line = q_out.get_nowait().strip()
@@ -361,34 +380,12 @@ class WipeProgressFrame(customtkinter.CTkFrame):
         try:
             while True:
                 line = q_err.get_nowait().strip()
-                # --- [FIXED] Better parsing of pv's real-time output ---
-                if any(unit in line for unit in ["KiB", "MiB", "GiB", "TiB"]) and not line.startswith("ERR:"):
+                if any(unit in line for unit in ["KiB", "MiB", "GiB", "TiB"]):
                     try:
-                        # pv output formats: "1.23GiB 0:00:15 [85.2MiB/s]" or "1.23GiB"
-                        # Find the first occurrence of size with unit
-                        import re
-                        size_match = re.search(r'(\d+(?:\.\d+)?)\s*([KMGT]iB)', line)
-                        if size_match:
-                            size_value = float(size_match.group(1))
-                            size_unit = size_match.group(2)
-                            
-                            # Convert to GiB for display
-                            if size_unit == "KiB":
-                                size_gib = size_value / (1024 * 1024)
-                            elif size_unit == "MiB":
-                                size_gib = size_value / 1024
-                            elif size_unit == "GiB":
-                                size_gib = size_value
-                            elif size_unit == "TiB":
-                                size_gib = size_value * 1024
-                            else:
-                                size_gib = 0
-                            
-                            self.data_label.configure(text=f"Overwritten: {size_gib:.2f} / {self.bytes_to_gib_str(self.current_device_total_size)}")
-                    except (IndexError, ValueError, AttributeError) as e: 
-                        pass # Ignore malformed lines
-                elif line and not any(unit in line for unit in ["KiB", "MiB", "GiB", "TiB"]):
-                    self.log(f"ERR: {line}")
+                        wiped_raw = line.split()[0]
+                        self.data_label.configure(text=f"Overwritten: {wiped_raw} / {self.bytes_to_gib_str(self.current_device_total_size)}")
+                    except IndexError: pass
+                else: self.log(f"ERR: {line}")
         except Empty: pass
         
         if self.process.poll() is None: self.after(100, self.check_queues, q_out, q_err, device_data)
@@ -412,7 +409,7 @@ class WipeProgressFrame(customtkinter.CTkFrame):
             self.log(f"✅ WIPE SUCCESSFUL for /dev/{device_data['name']}")
             self.generate_certificate(device_data)
         else:
-            self.progress_label.configure(text="Status: WIPE FAILED!", text_color="red")
+            self.progress_label.configure(text="Status: WIPE FAILED!", text_color="orange")
             self.log(f"❌ WIPE FAILED for /dev/{device_data['name']}. Halting queue.")
             self.device_queue.clear()
         self.process_next_in_queue()
@@ -423,16 +420,39 @@ class WipeProgressFrame(customtkinter.CTkFrame):
             self.time_label.configure(text=f"Elapsed: {str(datetime.timedelta(seconds=int(elapsed)))}")
             self.after(1000, self.update_timer)
 
+    # --- [MODIFIED] Certificate Generation Logic ---
     def generate_certificate(self, device_data):
         self.log(f"Generating certificate for /dev/{device_data['name']}...")
         timestamp = datetime.datetime.now(datetime.timezone.utc)
         scraped_info = self.controller.frames[MainFrame].get_drive_details(f"/dev/{device_data['name']}")
         serial = scraped_info.get('serial_number') or 'UNKNOWN_SERIAL'
+        
+        placeholder = "Not Provided (Input Disabled)"
+
         cert_payload = {
-            "nist_reference": "NIST SP 800-88r2", "tool_information": {"name": APP_NAME, "version": APP_VERSION},
-            "sanitization_event": {"timestamp": timestamp.isoformat(), "status": "Success", "technique": "5-Pass Overwrite"},
-            "media_information": {"model": scraped_info.get('model'), "serial_number": serial}
+            "nist_reference": "NIST SP 800-88r2",
+            "media_information": {
+                "model": scraped_info.get('model', 'N/A'),
+                "serial_number": serial,
+                "property_number": placeholder,
+                "media_type": scraped_info.get('media_type', 'N/A'),
+                "media_source": placeholder
+            },
+            "sanitization_plan": {
+                "pre_sanitization_confidentiality": placeholder,
+                "sanitization_method": "Clear",
+                "sanitization_technique": "5-Pass Overwrite",
+                "tool_used": f"{APP_NAME} v{APP_VERSION}",
+                "verification_method": "Sampling (First 1MB)",
+                "post_sanitization_confidentiality": placeholder,
+                "post_sanitization_destination": placeholder
+            },
+            "sanitization_event": {
+                "timestamp": timestamp.isoformat(),
+                "status": "Success"
+            }
         }
+        
         try:
             with open(PRIVATE_KEY_PATH, 'rb') as f: private_key = serialization.load_pem_private_key(f.read(), password=None)
             json_payload_bytes = json.dumps(cert_payload, sort_keys=True, indent=2).encode('utf-8')
@@ -442,7 +462,10 @@ class WipeProgressFrame(customtkinter.CTkFrame):
             if not os.path.exists(CERT_DIR): os.makedirs(CERT_DIR)
             with open(filepath, 'w') as f: json.dump(signed_cert_container, f, indent=2)
             self.log(f"✅ Certificate saved successfully to {filepath}")
-        except Exception as e: self.log(f"❌ ERROR: Could not sign or save certificate: {e}")
+        except Exception as e:
+            self.log(f"❌ ERROR: Could not sign or save certificate: {e}")
+            self.progress_label.configure(text="Wipe OK, but CERTIFICATE FAILED!", text_color="orange")
+
 # --- Entry Point ---
 if __name__ == "__main__":
     if os.geteuid() != 0:
