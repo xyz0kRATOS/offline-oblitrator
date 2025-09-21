@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# obliterator_gui.py - (Version 15.0 - Comprehensive Certificate)
+# obliterator_gui.py - (Version 15.0 - Final Path Fix)
 # GUI for the Obliterator Secure Wipe Tool
 
 import tkinter
@@ -19,8 +19,8 @@ from PIL import Image, ImageTk
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
 
-# --- Configuration [MODIFIED] ---
-# All paths updated to your new directory structure.
+# --- Configuration [CRITICAL] ---
+# All paths are built from this BASE_DIR. Ensure it matches your setup.
 APP_NAME = "OBLITERATOR"
 APP_VERSION = "15.0-final"
 BASE_DIR = "/my-applications/obliterator"
@@ -347,7 +347,7 @@ class WipeProgressFrame(customtkinter.CTkFrame):
 
     def run_wipe_script(self, device_data):
         self.start_time = time.time(); self.after(1000, self.update_timer)
-        device_path = f"/dev/{device_data['name']}"; command = ['bash', WIPE_SCRIPT_PATH, device_path, 'OBLITERATE','--test']
+        device_path = f"/dev/{device_data['name']}"; command = ['bash', WIPE_SCRIPT_PATH, device_path, 'OBLITERATE']
         try:
             self.process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1)
             q_out, q_err = Queue(), Queue()
@@ -420,39 +420,16 @@ class WipeProgressFrame(customtkinter.CTkFrame):
             self.time_label.configure(text=f"Elapsed: {str(datetime.timedelta(seconds=int(elapsed)))}")
             self.after(1000, self.update_timer)
 
-    # --- [MODIFIED] Certificate Generation Logic ---
     def generate_certificate(self, device_data):
         self.log(f"Generating certificate for /dev/{device_data['name']}...")
         timestamp = datetime.datetime.now(datetime.timezone.utc)
         scraped_info = self.controller.frames[MainFrame].get_drive_details(f"/dev/{device_data['name']}")
         serial = scraped_info.get('serial_number') or 'UNKNOWN_SERIAL'
-        
-        placeholder = "Not Provided (Input Disabled)"
-
         cert_payload = {
-            "nist_reference": "NIST SP 800-88r2",
-            "media_information": {
-                "model": scraped_info.get('model', 'N/A'),
-                "serial_number": serial,
-                "property_number": placeholder,
-                "media_type": scraped_info.get('media_type', 'N/A'),
-                "media_source": placeholder
-            },
-            "sanitization_plan": {
-                "pre_sanitization_confidentiality": placeholder,
-                "sanitization_method": "Clear",
-                "sanitization_technique": "5-Pass Overwrite",
-                "tool_used": f"{APP_NAME} v{APP_VERSION}",
-                "verification_method": "Sampling (First 1MB)",
-                "post_sanitization_confidentiality": placeholder,
-                "post_sanitization_destination": placeholder
-            },
-            "sanitization_event": {
-                "timestamp": timestamp.isoformat(),
-                "status": "Success"
-            }
+            "nist_reference": "NIST SP 800-88r2", "tool_information": {"name": APP_NAME, "version": APP_VERSION},
+            "sanitization_event": {"timestamp": timestamp.isoformat(), "status": "Success", "technique": "5-Pass Overwrite"},
+            "media_information": {"model": scraped_info.get('model'), "serial_number": serial}
         }
-        
         try:
             with open(PRIVATE_KEY_PATH, 'rb') as f: private_key = serialization.load_pem_private_key(f.read(), password=None)
             json_payload_bytes = json.dumps(cert_payload, sort_keys=True, indent=2).encode('utf-8')
