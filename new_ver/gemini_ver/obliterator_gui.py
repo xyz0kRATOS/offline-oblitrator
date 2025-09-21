@@ -347,7 +347,7 @@ class WipeProgressFrame(customtkinter.CTkFrame):
 
     def run_wipe_script(self, device_data):
         self.start_time = time.time(); self.after(1000, self.update_timer)
-        device_path = f"/dev/{device_data['name']}"; command = ['bash', WIPE_SCRIPT_PATH, device_path, 'OBLITERATE']
+        device_path = f"/dev/{device_data['name']}"; command = ['bash', WIPE_SCRIPT_PATH, device_path, 'OBLITERATE','--test']
         try:
             self.process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1)
             q_out, q_err = Queue(), Queue()
