@@ -1,19 +1,10 @@
 #!/bin/bash
-# wipe_disk.sh - (v6 - Absolute Path Fix)
+# wipe_disk.sh - (v7 - No PV)
 
 # --- Strict Mode ---
 set -euo pipefail
 
-# --- Configuration ---
-# PASTE THE PATH FROM 'command -v pv' HERE
-PV_CMD="/usr/bin/pv"
-
 # --- Dependency Check ---
-# Check if the configured PV_CMD is executable
-if [ ! -x "$PV_CMD" ]; then
-    echo "ERROR: pv command not found or not executable at '${PV_CMD}'" >&2
-    exit 1
-fi
 for cmd in dd blockdev tr; do
   if ! command -v "$cmd" >/dev/null 2>&1; then
     echo "ERROR: Critical command '$cmd' is not found." >&2; exit 1;
@@ -48,34 +39,36 @@ if [ "$TEST_MODE" == "--test" ]; then
   exit 0
 fi
 
-# --- Real Wiping Logic ---
+# --- Real Wiping Logic (Using dd status=progress) ---
 echo "--- Starting 5-Pass Sanitization on $TARGET_DEVICE ---"
-DEVICE_SIZE_BYTES=$(blockdev --getsize64 "$TARGET_DEVICE")
 sync
+
+# Note: The status=progress output goes to stderr and will appear in the GUI logbox.
+# We use a large block size (bs=4M) for better performance.
 
 # Pass 1: Random
 echo "PROGRESS:1/5:Starting Pass 1 (Random Data)..."
-dd if=/dev/urandom bs=1M | "$PV_CMD" -p -t -e -b -s "$DEVICE_SIZE_BYTES" | dd of="$TARGET_DEVICE" bs=1M oflag=direct status=none
+dd if=/dev/urandom of="$TARGET_DEVICE" bs=4M oflag=direct status=progress
 sync; echo "PROGRESS:1/5:Pass 1 Complete."
 
 # Pass 2: Pattern 0x55
 echo "PROGRESS:2/5:Starting Pass 2 (Pattern 0x55)..."
-dd if=/dev/zero bs=1M | tr "\000" "\125" | "$PV_CMD" -p -t -e -b -s "$DEVICE_SIZE_BYTES" | dd of="$TARGET_DEVICE" bs=1M oflag=direct status=none
+dd if=/dev/zero bs=4M | tr "\000" "\125" | dd of="$TARGET_DEVICE" bs=4M oflag=direct status=progress
 sync; echo "PROGRESS:2/5:Pass 2 Complete."
 
 # Pass 3: Pattern 0xAA
 echo "PROGRESS:3/5:Starting Pass 3 (Pattern 0xAA)..."
-dd if=/dev/zero bs=1M | tr "\000" "\252" | "$PV_CMD" -p -t -e -b -s "$DEVICE_SIZE_BYTES" | dd of="$TARGET_DEVICE" bs=1M oflag=direct status=none
+dd if=/dev/zero bs=4M | tr "\000" "\252" | dd of="$TARGET_DEVICE" bs=4M oflag=direct status=progress
 sync; echo "PROGRESS:3/5:Pass 3 Complete."
 
 # Pass 4: Random
 echo "PROGRESS:4/5:Starting Pass 4 (Random Data)..."
-dd if=/dev/urandom bs=1M | "$PV_CMD" -p -t -e -b -s "$DEVICE_SIZE_BYTES" | dd of="$TARGET_DEVICE" bs=1M oflag=direct status=none
+dd if=/dev/urandom of="$TARGET_DEVICE" bs=4M oflag=direct status=progress
 sync; echo "PROGRESS:4/5:Pass 4 Complete."
 
 # Pass 5: Zeros
 echo "PROGRESS:5/5:Starting Pass 5 (Zeros)..."
-dd if=/dev/zero bs=1M | "$PV_CMD" -p -t -e -b -s "$DEVICE_SIZE_BYTES" | dd of="$TARGET_DEVICE" bs=1M oflag=direct status=none
+dd if=/dev/zero of="$TARGET_DEVICE" bs=4M oflag=direct status=progress
 sync; echo "PROGRESS:5/5:Pass 5 Complete."
 
 echo "VERIFICATION:Starting final verification..."
