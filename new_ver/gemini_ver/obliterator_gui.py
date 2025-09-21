@@ -350,6 +350,7 @@ class WipeProgressFrame(customtkinter.CTkFrame):
                 buffer += char
 
     def check_queues(self, q_out, q_err, device_data):
+        
         try:
             while True:
                 line = q_out.get_nowait().strip()
@@ -360,14 +361,34 @@ class WipeProgressFrame(customtkinter.CTkFrame):
         try:
             while True:
                 line = q_err.get_nowait().strip()
-                # --- [FIXED] Correctly parse pv's real-time output ---
-                if any(unit in line for unit in ["KiB", "MiB", "GiB", "TiB"]):
+                # --- [FIXED] Better parsing of pv's real-time output ---
+                if any(unit in line for unit in ["KiB", "MiB", "GiB", "TiB"]) and not line.startswith("ERR:"):
                     try:
-                        # pv's output is often like "1.23GiB 0:00:15 [ 85.2MiB/s]..."
-                        wiped_raw = line.split()[0]
-                        self.data_label.configure(text=f"Overwritten: {wiped_raw} / {self.bytes_to_gib_str(self.current_device_total_size)}")
-                    except IndexError: pass # Ignore malformed lines
-                else: self.log(f"ERR: {line}")
+                        # pv output formats: "1.23GiB 0:00:15 [85.2MiB/s]" or "1.23GiB"
+                        # Find the first occurrence of size with unit
+                        import re
+                        size_match = re.search(r'(\d+(?:\.\d+)?)\s*([KMGT]iB)', line)
+                        if size_match:
+                            size_value = float(size_match.group(1))
+                            size_unit = size_match.group(2)
+                            
+                            # Convert to GiB for display
+                            if size_unit == "KiB":
+                                size_gib = size_value / (1024 * 1024)
+                            elif size_unit == "MiB":
+                                size_gib = size_value / 1024
+                            elif size_unit == "GiB":
+                                size_gib = size_value
+                            elif size_unit == "TiB":
+                                size_gib = size_value * 1024
+                            else:
+                                size_gib = 0
+                            
+                            self.data_label.configure(text=f"Overwritten: {size_gib:.2f} / {self.bytes_to_gib_str(self.current_device_total_size)}")
+                    except (IndexError, ValueError, AttributeError) as e: 
+                        pass # Ignore malformed lines
+                elif line and not any(unit in line for unit in ["KiB", "MiB", "GiB", "TiB"]):
+                    self.log(f"ERR: {line}")
         except Empty: pass
         
         if self.process.poll() is None: self.after(100, self.check_queues, q_out, q_err, device_data)
