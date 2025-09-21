@@ -284,10 +284,8 @@ class WipeProgressFrame(customtkinter.CTkFrame):
         self.title_label = customtkinter.CTkLabel(center_frame, text="Wiping Drive...", font=FONT_BODY_BOLD); self.title_label.pack(pady=(0,20), padx=50)
         self.progress_label = customtkinter.CTkLabel(center_frame, text="Status: Initializing...", font=FONT_BODY); self.progress_label.pack(pady=10, padx=20)
         
-        # --- [MODIFIED] Progress bar is now 'indeterminate' (continuous) ---
         self.progress_bar = customtkinter.CTkProgressBar(center_frame, width=500, mode='indeterminate'); self.progress_bar.pack(pady=10, padx=20)
         
-        # --- [MODIFIED] Simplified info frame with Speed removed ---
         info_frame = customtkinter.CTkFrame(center_frame, fg_color="transparent"); info_frame.pack(pady=20, padx=20, fill="x"); info_frame.grid_columnconfigure((0, 1), weight=1)
         self.time_label = customtkinter.CTkLabel(info_frame, text="Elapsed: 00:00:00", font=FONT_MONO); self.time_label.grid(row=0, column=0, sticky="w")
         self.data_label = customtkinter.CTkLabel(info_frame, text="Overwritten: 0.00 / 0.00 GiB", font=FONT_MONO); self.data_label.grid(row=0, column=1, sticky="e")
@@ -311,10 +309,10 @@ class WipeProgressFrame(customtkinter.CTkFrame):
             self.overall_title_label.configure(text="All Wipes Complete!")
             self.log("✅ All selected drives have been processed.")
             self.finish_button.pack(pady=20)
-            self.progress_bar.stop()
+            if self.progress_bar.winfo_exists(): self.progress_bar.stop()
             return
         
-        self.progress_bar.start()
+        if self.progress_bar.winfo_exists(): self.progress_bar.start()
         self.current_device_index += 1
         device_data = self.device_queue.pop(0)
         scraped_info = self.controller.frames[MainFrame].get_drive_details(f"/dev/{device_data['name']}")
@@ -336,8 +334,20 @@ class WipeProgressFrame(customtkinter.CTkFrame):
             self.after(100, self.check_queues, q_out, q_err, device_data)
         except Exception as e: self.log(f"CRITICAL FAILURE: {e}")
 
+    # --- [FIXED] This function now correctly handles real-time output ---
     def read_stream(self, stream, queue):
-        for line in iter(stream.readline, ''): queue.put(line)
+        """Reads a stream character by character and puts lines on a queue."""
+        buffer = ''
+        while True:
+            char = stream.read(1)
+            if not char: # End of stream
+                if buffer: queue.put(buffer)
+                break
+            if char in ['\r', '\n']:
+                if buffer: queue.put(buffer)
+                buffer = ''
+            else:
+                buffer += char
 
     def check_queues(self, q_out, q_err, device_data):
         try:
@@ -350,9 +360,10 @@ class WipeProgressFrame(customtkinter.CTkFrame):
         try:
             while True:
                 line = q_err.get_nowait().strip()
-                # --- [FIXED] Correctly parse pv's output for overwritten data ---
+                # --- [FIXED] Correctly parse pv's real-time output ---
                 if any(unit in line for unit in ["KiB", "MiB", "GiB", "TiB"]):
                     try:
+                        # pv's output is often like "1.23GiB 0:00:15 [ 85.2MiB/s]..."
                         wiped_raw = line.split()[0]
                         self.data_label.configure(text=f"Overwritten: {wiped_raw} / {self.bytes_to_gib_str(self.current_device_total_size)}")
                     except IndexError: pass # Ignore malformed lines
@@ -374,7 +385,7 @@ class WipeProgressFrame(customtkinter.CTkFrame):
         except (IndexError, ValueError): pass
 
     def wipe_finished(self, success, device_data):
-        self.progress_bar.stop()
+        if self.progress_bar.winfo_exists(): self.progress_bar.stop()
         if success:
             self.progress_label.configure(text="Status: Wipe and Verification Complete!")
             self.log(f"✅ WIPE SUCCESSFUL for /dev/{device_data['name']}")
@@ -411,7 +422,6 @@ class WipeProgressFrame(customtkinter.CTkFrame):
             with open(filepath, 'w') as f: json.dump(signed_cert_container, f, indent=2)
             self.log(f"✅ Certificate saved successfully to {filepath}")
         except Exception as e: self.log(f"❌ ERROR: Could not sign or save certificate: {e}")
-
 # --- Entry Point ---
 if __name__ == "__main__":
     if os.geteuid() != 0:
