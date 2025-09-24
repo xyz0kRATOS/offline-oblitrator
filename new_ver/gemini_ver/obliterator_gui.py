@@ -51,7 +51,8 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 THEME_FILE = os.path.join(SCRIPT_DIR, "purple_theme.json")
 LOGO_FILE = os.path.join(SCRIPT_DIR, "logo.png") 
 CERT_DIR = os.path.join(SCRIPT_DIR, "certificates/")
-WIPE_SCRIPT_PATH = os.path.join(SCRIPT_DIR, "wipe_disk.sh")
+WIPE_SCRIPT_PATH = os.path.join(SCRIPT_DIR, "wipe_disk_enhanced.sh")
+DEVICE_DETECTION_SCRIPT = os.path.join(SCRIPT_DIR, "detect_devices.sh")
 CERT_GENERATOR_PATH = os.path.join(SCRIPT_DIR, "generate_certificate.sh")
 
 # --- Font Definitions ---
@@ -79,7 +80,7 @@ class App(customtkinter.CTk):
         else: print(f"Warning: Theme file not found at {THEME_FILE}.")
         
         self.title(APP_NAME)
-        self.geometry("1920x1080")
+        self.geometry("1200x800")
         self.grid_rowconfigure(0, weight=1); self.grid_columnconfigure(0, weight=1)
 
         self.container = customtkinter.CTkFrame(self, fg_color="transparent")
@@ -226,11 +227,63 @@ class MainFrame(customtkinter.CTkFrame):
         self.host_details_textbox.configure(state="disabled")
 
     def get_drive_details(self, dev_path):
+        """Get detailed drive information using enhanced detection"""
+        try:
+            # Use the enhanced device detection script
+            result = subprocess.run([
+                'bash', DEVICE_DETECTION_SCRIPT, 
+                '--json', '--device', dev_path
+            ], capture_output=True, text=True, check=True)
+            
+            detection_data = json.loads(result.stdout)
+            devices = detection_data.get('devices', [])
+            
+            if devices:
+                device_info = devices[0]
+                return {
+                    'model': device_info.get('model', 'N/A'),
+                    'serial_number': device_info.get('serial_number', 'N/A'),
+                    'size_bytes': device_info.get('size_bytes', 0),
+                    'device_type': device_info.get('device_type', 'unknown'),
+                    'recommended_method': device_info.get('recommended_method', 'overwrite'),
+                    'estimated_time': device_info.get('estimated_time_minutes', 60),
+                    'warnings': device_info.get('warnings', ''),
+                    'has_hpa': device_info.get('has_hpa', False),
+                    'has_dco': device_info.get('has_dco', False),
+                    'smart_health': device_info.get('smart_health', 'unknown')
+                }
+        except Exception as e:
+            print(f"Enhanced detection failed for {dev_path}: {e}")
+            
+        # Fallback to basic smartctl detection
         try:
             result = subprocess.run(['smartctl', '-i', '--json', dev_path], capture_output=True, text=True, check=True)
             data = json.loads(result.stdout)
-            return {'model': data.get('model_name', 'N/A'), 'serial_number': data.get('serial_number', 'N/A'), 'size_bytes': data.get('user_capacity', {}).get('bytes', 0)}
-        except Exception: return {'size_bytes': 0}
+            return {
+                'model': data.get('model_name', 'N/A'), 
+                'serial_number': data.get('serial_number', 'N/A'), 
+                'size_bytes': data.get('user_capacity', {}).get('bytes', 0),
+                'device_type': 'unknown',
+                'recommended_method': 'overwrite',
+                'estimated_time': 60,
+                'warnings': 'Enhanced detection unavailable',
+                'has_hpa': False,
+                'has_dco': False,
+                'smart_health': 'unknown'
+            }
+        except Exception: 
+            return {
+                'model': 'N/A', 
+                'serial_number': 'N/A', 
+                'size_bytes': 0,
+                'device_type': 'unknown',
+                'recommended_method': 'overwrite',
+                'estimated_time': 60,
+                'warnings': 'Device information unavailable',
+                'has_hpa': False,
+                'has_dco': False,
+                'smart_health': 'unknown'
+            }
 
     def populate_devices(self):
         for checkbox in self.device_checkboxes.values(): checkbox.destroy()
@@ -257,17 +310,54 @@ class MainFrame(customtkinter.CTkFrame):
         self.details_textbox.configure(state="normal")
         self.details_textbox.delete("1.0", "end")
         if not selected_devs:
-            self.details_textbox.insert("1.0", "Select one or more drives to see the plan.")
+            self.details_textbox.insert("1.0", "Select one or more drives to see the sanitization plan.")
         else:
-            plan_text = ( f"Tool Used:   {APP_NAME} v{APP_VERSION}\n"
-                          f"Method:      Clear\n"
-                          f"Technique:   5-Pass Overwrite\n" + ("-"*40) + "\n" )
+            plan_text = f"Tool Used:   {APP_NAME} v{APP_VERSION}\n"
+            plan_text += f"Standard:    NIST SP 800-88r2 Compliant\n"
+            plan_text += ("-"*50) + "\n\n"
+            
+            total_estimated_time = 0
+            
             for dev_data in selected_devs:
                 dev_path = f"/dev/{dev_data.get('name')}"
                 scraped = self.get_drive_details(dev_path)
-                plan_text += (f"Target: {dev_path}\n"
-                              f"  Model:  {scraped.get('model', 'N/A')}\n"
-                              f"  Serial: {scraped.get('serial_number', 'N/A')}\n\n")
+                
+                device_type = scraped.get('device_type', 'unknown')
+                recommended_method = scraped.get('recommended_method', 'overwrite')
+                estimated_time = scraped.get('estimated_time', 60)
+                warnings = scraped.get('warnings', '')
+                
+                total_estimated_time += estimated_time
+                
+                plan_text += f"Target: {dev_path}\n"
+                plan_text += f"  Model:           {scraped.get('model', 'N/A')}\n"
+                plan_text += f"  Serial:          {scraped.get('serial_number', 'N/A')}\n"
+                plan_text += f"  Type:            {device_type}\n"
+                plan_text += f"  Method:          {recommended_method}\n"
+                plan_text += f"  Est. Time:       {estimated_time} minutes\n"
+                plan_text += f"  SMART Health:    {scraped.get('smart_health', 'unknown')}\n"
+                
+                # Show security features
+                security_info = []
+                if scraped.get('has_hpa'):
+                    security_info.append("HPA detected")
+                if scraped.get('has_dco'):
+                    security_info.append("DCO detected")
+                
+                if security_info:
+                    plan_text += f"  Security:        {', '.join(security_info)}\n"
+                
+                if warnings:
+                    plan_text += f"  Warnings:        {warnings}\n"
+                
+                plan_text += "\n"
+            
+            # Add summary
+            plan_text += ("-"*50) + "\n"
+            plan_text += f"Total Devices:     {len(selected_devs)}\n"
+            plan_text += f"Total Est. Time:   {total_estimated_time} minutes ({total_estimated_time//60}h {total_estimated_time%60}m)\n"
+            plan_text += f"Compliance:        NIST SP 800-88r2\n"
+            
             self.details_textbox.insert("1.0", plan_text)
         self.details_textbox.configure(state="disabled")
 
@@ -319,20 +409,18 @@ class WipeProgressFrame(customtkinter.CTkFrame):
         self.grid_columnconfigure(0, weight=1); self.grid_rowconfigure(0, weight=1)
         center_frame = customtkinter.CTkFrame(self); center_frame.grid(row=0, column=0)
         
-        
         self.overall_title_label = customtkinter.CTkLabel(center_frame, text="", font=FONT_SUBHEADER); self.overall_title_label.pack(pady=(20, 0), padx=50)
         self.title_label = customtkinter.CTkLabel(center_frame, text="Wiping Drive...", font=FONT_BODY_BOLD); self.title_label.pack(pady=(0,20), padx=50)
         self.progress_label = customtkinter.CTkLabel(center_frame, text="Status: Initializing...", font=FONT_BODY); self.progress_label.pack(pady=10, padx=20)
+        self.progress_bar = customtkinter.CTkProgressBar(center_frame, width=500); self.progress_bar.set(0); self.progress_bar.pack(pady=10, padx=20)
         
-        self.progress_bar = customtkinter.CTkProgressBar(center_frame, width=500, mode='indeterminate'); self.progress_bar.pack(pady=10, padx=20)
-        
-        info_frame = customtkinter.CTkFrame(center_frame, fg_color="transparent"); info_frame.pack(pady=20, padx=20, fill="x"); info_frame.grid_columnconfigure((0, 1), weight=1)
+        info_frame = customtkinter.CTkFrame(center_frame, fg_color="transparent"); info_frame.pack(pady=20, padx=20, fill="x"); info_frame.grid_columnconfigure((0, 1, 2), weight=1)
         self.time_label = customtkinter.CTkLabel(info_frame, text="Elapsed: 00:00:00", font=FONT_MONO); self.time_label.grid(row=0, column=0, sticky="w")
-        self.data_label = customtkinter.CTkLabel(info_frame, text="Overwritten: 0.00 / 0.00 GiB", font=FONT_MONO); self.data_label.grid(row=0, column=1, sticky="e")
+        self.data_label = customtkinter.CTkLabel(info_frame, text="Wiped: 0.00 / 0.00 GiB", font=FONT_MONO); self.data_label.grid(row=0, column=1)
+        self.speed_label = customtkinter.CTkLabel(info_frame, text="Speed: 0 MB/s", font=FONT_MONO); self.speed_label.grid(row=0, column=2, sticky="e")
         
         self.log_textbox = CustomTextbox(center_frame, height=250, width=600, state="disabled", font=FONT_MONO, scrollbar_button_color="#FFD700")
         self.log_textbox.pack(pady=10, padx=20)
-        self.finish_button = customtkinter.CTkButton(center_frame, text="Return to Dashboard", font=FONT_BODY, command=lambda: controller.show_frame(MainFrame))
         
     def log(self, message):
         self.log_textbox.configure(state="normal"); self.log_textbox.insert("end", f"{message}\n"); self.log_textbox.see("end"); self.log_textbox.configure(state="disabled")
@@ -382,8 +470,31 @@ class WipeProgressFrame(customtkinter.CTkFrame):
             while True:
                 line = q_out.get_nowait().strip()
                 self.log(f"OUT: {line}")
-                if line.startswith("PROGRESS:"): self.update_progress_from_line(line)
-                elif "STATUS:SUCCESS" in line: self.wipe_finished(True, device_data); return
+                               # Handle enhanced script output formats
+                if line.startswith("PROGRESS:"):
+                    self.update_progress_from_line(line)
+                elif line.startswith("DEVICE_TYPE:"):
+                    device_type = line.split(":", 1)[1]
+                    self.log(f"Device type detected: {device_type}")
+                elif line.startswith("SANITIZE_METHOD:"):
+                    method = line.split(":", 1)[1]
+                    self.progress_label.configure(text=f"Status: Using {method} method")
+                elif line.startswith("HPA_DETECTED:"):
+                    hpa_status = line.split(":", 1)[1]
+                    if hpa_status == "true":
+                        self.log("HPA (Hidden Protected Area) detected and will be removed")
+                elif line.startswith("ATA_SECURITY:"):
+                    security_info = line.split(":", 1)[1]
+                    self.log(f"ATA Security: {security_info}")
+                elif line.startswith("VERIFICATION:"):
+                    verification_msg = line.split(":", 1)[1]
+                    self.progress_label.configure(text=f"Status: {verification_msg}")
+                elif "STATUS:SUCCESS" in line: 
+                    self.wipe_finished(True, device_data)
+                    return
+                elif "STATUS:FAILED" in line:
+                    self.wipe_finished(False, device_data)
+                    return
         except Empty: pass
         try:
             while True:
