@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-# obliterator_gui_modified.py - (Version 12.1 - Certificate Generation Removed)
+# obliterator_gui_fixed.py - (Version 12.2 - Fixed Error Handling)
 # GUI for the Obliterator Secure Wipe Tool
-# Certificate generation has been moved to external bash script
+# Fixed device detection and progress monitoring issues
 
 import tkinter
 import customtkinter
@@ -46,7 +46,7 @@ def check_authentication():
 
 # --- Configuration ---
 APP_NAME = "OBLITERATOR"
-APP_VERSION = "12.1-modified"
+APP_VERSION = "12.2-fixed"
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 THEME_FILE = os.path.join(SCRIPT_DIR, "purple_theme.json")
 LOGO_FILE = os.path.join(SCRIPT_DIR, "logo.png") 
@@ -80,7 +80,7 @@ class App(customtkinter.CTk):
         else: print(f"Warning: Theme file not found at {THEME_FILE}.")
         
         self.title(APP_NAME)
-        self.geometry("1200x800")
+        self.geometry("1920x1080")
         self.grid_rowconfigure(0, weight=1); self.grid_columnconfigure(0, weight=1)
 
         self.container = customtkinter.CTkFrame(self, fg_color="transparent")
@@ -211,7 +211,8 @@ class MainFrame(customtkinter.CTkFrame):
             details['manufacturer'] = subprocess.check_output(['dmidecode', '-s', 'system-manufacturer']).decode().strip()
             details['model'] = subprocess.check_output(['dmidecode', '-s', 'system-product-name']).decode().strip()
             details['serial'] = subprocess.check_output(['dmidecode', '-s', 'system-serial-number']).decode().strip()
-        except Exception as e: print(f"Could not get host info: {e}")
+        except Exception as e: 
+            print(f"Could not get host info: {e}")
         return details
 
     def display_host_system_info(self):
@@ -227,58 +228,79 @@ class MainFrame(customtkinter.CTkFrame):
         self.host_details_textbox.configure(state="disabled")
 
     def get_drive_details(self, dev_path):
-        """Get detailed drive information using enhanced detection"""
-        try:
-            # Use the enhanced device detection script
-            result = subprocess.run([
-                'bash', DEVICE_DETECTION_SCRIPT, 
-                '--json', '--device', dev_path
-            ], capture_output=True, text=True, check=True)
-            
-            detection_data = json.loads(result.stdout)
-            devices = detection_data.get('devices', [])
-            
-            if devices:
-                device_info = devices[0]
-                return {
-                    'model': device_info.get('model', 'N/A'),
-                    'serial_number': device_info.get('serial_number', 'N/A'),
-                    'size_bytes': device_info.get('size_bytes', 0),
-                    'device_type': device_info.get('device_type', 'unknown'),
-                    'recommended_method': device_info.get('recommended_method', 'overwrite'),
-                    'estimated_time': device_info.get('estimated_time_minutes', 60),
-                    'warnings': device_info.get('warnings', ''),
-                    'has_hpa': device_info.get('has_hpa', False),
-                    'has_dco': device_info.get('has_dco', False),
-                    'smart_health': device_info.get('smart_health', 'unknown')
-                }
-        except Exception as e:
-            print(f"Enhanced detection failed for {dev_path}: {e}")
+        """Get detailed drive information with proper error handling"""
+        print(f"Getting drive details for {dev_path}")
+        
+        # Check if enhanced detection script exists and is executable
+        if os.path.exists(DEVICE_DETECTION_SCRIPT) and os.access(DEVICE_DETECTION_SCRIPT, os.X_OK):
+            try:
+                print(f"Trying enhanced detection for {dev_path}")
+                # Use the enhanced device detection script
+                result = subprocess.run([
+                    'bash', DEVICE_DETECTION_SCRIPT, 
+                    '--json', '--device', dev_path
+                ], capture_output=True, text=True, check=True, timeout=30)
+                
+                detection_data = json.loads(result.stdout)
+                devices = detection_data.get('devices', [])
+                
+                if devices:
+                    device_info = devices[0]
+                    print(f"Enhanced detection successful for {dev_path}")
+                    return {
+                        'model': device_info.get('model', 'N/A'),
+                        'serial_number': device_info.get('serial_number', 'N/A'),
+                        'size_bytes': device_info.get('size_bytes', 0),
+                        'device_type': device_info.get('device_type', 'unknown'),
+                        'recommended_method': device_info.get('recommended_method', 'overwrite'),
+                        'estimated_time': device_info.get('estimated_time_minutes', 60),
+                        'warnings': device_info.get('warnings', ''),
+                        'has_hpa': device_info.get('has_hpa', False),
+                        'has_dco': device_info.get('has_dco', False),
+                        'smart_health': device_info.get('smart_health', 'unknown')
+                    }
+                else:
+                    print(f"Enhanced detection returned no devices for {dev_path}")
+            except subprocess.TimeoutExpired:
+                print(f"Enhanced detection timed out for {dev_path}")
+            except subprocess.CalledProcessError as e:
+                print(f"Enhanced detection failed for {dev_path} with exit code {e.returncode}")
+                print(f"stderr: {e.stderr}")
+            except json.JSONDecodeError as e:
+                print(f"Enhanced detection returned invalid JSON for {dev_path}: {e}")
+            except Exception as e:
+                print(f"Enhanced detection error for {dev_path}: {e}")
+        else:
+            print(f"Enhanced detection script not found or not executable: {DEVICE_DETECTION_SCRIPT}")
             
         # Fallback to basic smartctl detection
+        print(f"Falling back to basic detection for {dev_path}")
         try:
-            result = subprocess.run(['smartctl', '-i', '--json', dev_path], capture_output=True, text=True, check=True)
+            result = subprocess.run(['smartctl', '-i', '--json', dev_path], 
+                                  capture_output=True, text=True, check=True, timeout=15)
             data = json.loads(result.stdout)
+            print(f"Basic detection successful for {dev_path}")
             return {
                 'model': data.get('model_name', 'N/A'), 
                 'serial_number': data.get('serial_number', 'N/A'), 
                 'size_bytes': data.get('user_capacity', {}).get('bytes', 0),
                 'device_type': 'unknown',
-                'recommended_method': 'overwrite',
-                'estimated_time': 60,
-                'warnings': 'Enhanced detection unavailable',
+                'recommended_method': 'overwrite_5pass',
+                'estimated_time': 120,
+                'warnings': 'Enhanced detection unavailable - using basic info',
                 'has_hpa': False,
                 'has_dco': False,
                 'smart_health': 'unknown'
             }
-        except Exception: 
+        except Exception as e:
+            print(f"Basic detection also failed for {dev_path}: {e}")
             return {
                 'model': 'N/A', 
                 'serial_number': 'N/A', 
                 'size_bytes': 0,
                 'device_type': 'unknown',
-                'recommended_method': 'overwrite',
-                'estimated_time': 60,
+                'recommended_method': 'overwrite_5pass',
+                'estimated_time': 120,
                 'warnings': 'Device information unavailable',
                 'has_hpa': False,
                 'has_dco': False,
@@ -286,17 +308,25 @@ class MainFrame(customtkinter.CTkFrame):
             }
 
     def populate_devices(self):
-        for checkbox in self.device_checkboxes.values(): checkbox.destroy()
+        for checkbox in self.device_checkboxes.values(): 
+            checkbox.destroy()
         self.device_checkboxes.clear()
+        
         try:
-            result = subprocess.run(['lsblk', '-d', '--json', '-o', 'NAME,MODEL,SERIAL,SIZE,TYPE'], capture_output=True, text=True, check=True)
-            devices = [dev for dev in json.loads(result.stdout).get("blockdevices", []) if dev.get("type") in ["disk", "nvme"]]
-        except Exception: devices = []
+            result = subprocess.run(['lsblk', '-d', '--json', '-o', 'NAME,MODEL,SERIAL,SIZE,TYPE'], 
+                                  capture_output=True, text=True, check=True, timeout=10)
+            devices = [dev for dev in json.loads(result.stdout).get("blockdevices", []) 
+                      if dev.get("type") in ["disk", "nvme"]]
+        except Exception as e:
+            print(f"Error getting device list: {e}")
+            devices = []
+            
         for dev in devices:
             dev_path = f"/dev/{dev.get('name', 'N/A')}"
             display_text = f"💾 {dev_path}  ({dev.get('size', 'N/A')})"
             var = tkinter.BooleanVar()
-            checkbox = customtkinter.CTkCheckBox(self.scrollable_drive_list, text=display_text, variable=var, font=FONT_BODY, command=self.update_selection_status)
+            checkbox = customtkinter.CTkCheckBox(self.scrollable_drive_list, text=display_text, 
+                                               variable=var, font=FONT_BODY, command=self.update_selection_status)
             checkbox.pack(anchor="w", padx=10, pady=5)
             self.device_checkboxes[dev_path] = {"var": var, "data": dev}
         self.update_selection_status()
@@ -309,6 +339,7 @@ class MainFrame(customtkinter.CTkFrame):
     def display_drive_details(self, selected_devs):
         self.details_textbox.configure(state="normal")
         self.details_textbox.delete("1.0", "end")
+        
         if not selected_devs:
             self.details_textbox.insert("1.0", "Select one or more drives to see the sanitization plan.")
         else:
@@ -384,15 +415,19 @@ class ConfirmationFrame(customtkinter.CTkFrame):
                                                       fg_color="#8B0000", hover_color="#A52A2A", # Maroon Colors
                                                       command=self.controller.execute_wipe)
         self.confirm_button.pack(side="left", padx=10)
-        cancel_button = customtkinter.CTkButton(button_frame, text="Cancel", font=FONT_BODY, command=lambda: self.controller.show_frame(MainFrame))
+        cancel_button = customtkinter.CTkButton(button_frame, text="Cancel", font=FONT_BODY, 
+                                              command=lambda: self.controller.show_frame(MainFrame))
         cancel_button.pack(side="right", padx=10)
         
     def update_device_info(self, devices):
         info_text = f"You are about to permanently destroy all data on {len(devices)} device(s):\n\n"
-        for dev in devices[:3]: info_text += f"- /dev/{dev.get('name')} ({dev.get('model') or 'N/A'})\n"
-        if len(devices) > 3: info_text += f"...and {len(devices)-3} more."
+        for dev in devices[:3]: 
+            info_text += f"- /dev/{dev.get('name')} ({dev.get('model') or 'N/A'})\n"
+        if len(devices) > 3: 
+            info_text += f"...and {len(devices)-3} more."
         self.info_label.configure(text=info_text)
-        self.entry.delete(0, "end"); self.check_token(None)
+        self.entry.delete(0, "end")
+        self.check_token(None)
         
     def check_token(self, event):
         self.confirm_button.configure(state="normal" if self.entry.get() == "OBLITERATE" else "disabled")
@@ -406,30 +441,46 @@ class WipeProgressFrame(customtkinter.CTkFrame):
         self.current_device_total_size = 0
         self.wiped_devices = []  # Track successfully wiped devices
         
-        self.grid_columnconfigure(0, weight=1); self.grid_rowconfigure(0, weight=1)
-        center_frame = customtkinter.CTkFrame(self); center_frame.grid(row=0, column=0)
+        self.grid_columnconfigure(0, weight=1)
+        self.grid_rowconfigure(0, weight=1)
+        center_frame = customtkinter.CTkFrame(self)
+        center_frame.grid(row=0, column=0)
         
-        self.overall_title_label = customtkinter.CTkLabel(center_frame, text="", font=FONT_SUBHEADER); self.overall_title_label.pack(pady=(20, 0), padx=50)
-        self.title_label = customtkinter.CTkLabel(center_frame, text="Wiping Drive...", font=FONT_BODY_BOLD); self.title_label.pack(pady=(0,20), padx=50)
-        self.progress_label = customtkinter.CTkLabel(center_frame, text="Status: Initializing...", font=FONT_BODY); self.progress_label.pack(pady=10, padx=20)
-        self.progress_bar = customtkinter.CTkProgressBar(center_frame, width=500); self.progress_bar.set(0); self.progress_bar.pack(pady=10, padx=20)
+        self.overall_title_label = customtkinter.CTkLabel(center_frame, text="", font=FONT_SUBHEADER)
+        self.overall_title_label.pack(pady=(20, 0), padx=50)
+        self.title_label = customtkinter.CTkLabel(center_frame, text="Wiping Drive...", font=FONT_BODY_BOLD)
+        self.title_label.pack(pady=(0,20), padx=50)
+        self.progress_label = customtkinter.CTkLabel(center_frame, text="Status: Initializing...", font=FONT_BODY)
+        self.progress_label.pack(pady=10, padx=20)
         
-        info_frame = customtkinter.CTkFrame(center_frame, fg_color="transparent"); info_frame.pack(pady=20, padx=20, fill="x"); info_frame.grid_columnconfigure((0, 1, 2), weight=1)
-        self.time_label = customtkinter.CTkLabel(info_frame, text="Elapsed: 00:00:00", font=FONT_MONO); self.time_label.grid(row=0, column=0, sticky="w")
-        self.data_label = customtkinter.CTkLabel(info_frame, text="Wiped: 0.00 / 0.00 GiB", font=FONT_MONO); self.data_label.grid(row=0, column=1)
-        self.speed_label = customtkinter.CTkLabel(info_frame, text="Speed: 0 MB/s", font=FONT_MONO); self.speed_label.grid(row=0, column=2, sticky="e")
+        self.progress_bar = customtkinter.CTkProgressBar(center_frame, width=500, mode='indeterminate'); self.progress_bar.pack(pady=10, padx=20)
         
-        self.log_textbox = CustomTextbox(center_frame, height=250, width=600, state="disabled", font=FONT_MONO, scrollbar_button_color="#FFD700")
+        
+        info_frame = customtkinter.CTkFrame(center_frame, fg_color="transparent")
+        info_frame.pack(pady=20, padx=20, fill="x")
+        info_frame.grid_columnconfigure((0, 1, 2), weight=1)
+        self.time_label = customtkinter.CTkLabel(info_frame, text="Elapsed: 00:00:00", font=FONT_MONO)
+        self.time_label.grid(row=0, column=0, sticky="w")
+        self.data_label = customtkinter.CTkLabel(info_frame, text="Wiped: 0.00 / 0.00 GiB", font=FONT_MONO)
+        self.data_label.grid(row=0, column=1)
+
+        self.log_textbox = CustomTextbox(center_frame, height=250, width=600, state="disabled", 
+                                       font=FONT_MONO, scrollbar_button_color="#FFD700")
         self.log_textbox.pack(pady=10, padx=20)
         
     def log(self, message):
-        self.log_textbox.configure(state="normal"); self.log_textbox.insert("end", f"{message}\n"); self.log_textbox.see("end"); self.log_textbox.configure(state="disabled")
+        self.log_textbox.configure(state="normal")
+        self.log_textbox.insert("end", f"{message}\n")
+        self.log_textbox.see("end")
+        self.log_textbox.configure(state="disabled")
         
     def start_wipe_queue(self, devices):
         self.device_queue = list(devices)
         self.current_device_index, self.total_devices = 0, len(devices)
         self.wiped_devices = []  # Reset wiped devices list
-        self.log_textbox.configure(state="normal"); self.log_textbox.delete("1.0", "end"); self.log_textbox.configure(state="disabled")
+        self.log_textbox.configure(state="normal")
+        self.log_textbox.delete("1.0", "end")
+        self.log_textbox.configure(state="disabled")
         self.process_next_in_queue()
         
     def process_next_in_queue(self):
@@ -452,79 +503,138 @@ class WipeProgressFrame(customtkinter.CTkFrame):
         threading.Thread(target=self.run_wipe_script, args=(device_data,), daemon=True).start()
         
     def run_wipe_script(self, device_data):
-        self.start_time = time.time(); self.after(1000, self.update_timer)
-        device_path = f"/dev/{device_data['name']}"; command = ['bash', WIPE_SCRIPT_PATH, device_path, 'OBLITERATE']
+        self.start_time = time.time()
+        self.after(1000, self.update_timer)
+        device_path = f"/dev/{device_data['name']}"
+        
+        # Check which wipe script to use
+        if os.path.exists(WIPE_SCRIPT_PATH) and os.access(WIPE_SCRIPT_PATH, os.X_OK):
+            command = ['bash', WIPE_SCRIPT_PATH, device_path, 'OBLITERATE']
+            self.log(f"Using enhanced wipe script: {WIPE_SCRIPT_PATH}")
+        else:
+            # Fallback to basic wipe script if enhanced version not available
+            basic_wipe_script = os.path.join(SCRIPT_DIR, "wipe_disk.sh")
+            if os.path.exists(basic_wipe_script) and os.access(basic_wipe_script, os.X_OK):
+                command = ['bash', basic_wipe_script, device_path, 'OBLITERATE']
+                self.log(f"Using basic wipe script: {basic_wipe_script}")
+            else:
+                self.log("ERROR: No wipe script found!")
+                self.wipe_finished(False, device_data)
+                return
+                
         try:
-            self.process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1)
+            self.process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, 
+                                          text=True, bufsize=1)
             q_out, q_err = Queue(), Queue()
             threading.Thread(target=self.read_stream, args=(self.process.stdout, q_out), daemon=True).start()
             threading.Thread(target=self.read_stream, args=(self.process.stderr, q_err), daemon=True).start()
             self.after(100, self.check_queues, q_out, q_err, device_data)
-        except Exception as e: self.log(f"CRITICAL FAILURE: {e}")
+        except Exception as e: 
+            self.log(f"CRITICAL FAILURE: {e}")
+            self.wipe_finished(False, device_data)
             
     def read_stream(self, stream, queue):
-        for line in iter(stream.readline, ''): queue.put(line)
+        try:
+            for line in iter(stream.readline, ''): 
+                queue.put(line)
+        except Exception as e:
+            queue.put(f"ERROR reading stream: {e}\n")
             
     def check_queues(self, q_out, q_err, device_data):
         try:
             while True:
                 line = q_out.get_nowait().strip()
-                self.log(f"OUT: {line}")
-                               # Handle enhanced script output formats
-                if line.startswith("PROGRESS:"):
-                    self.update_progress_from_line(line)
-                elif line.startswith("DEVICE_TYPE:"):
-                    device_type = line.split(":", 1)[1]
-                    self.log(f"Device type detected: {device_type}")
-                elif line.startswith("SANITIZE_METHOD:"):
-                    method = line.split(":", 1)[1]
-                    self.progress_label.configure(text=f"Status: Using {method} method")
-                elif line.startswith("HPA_DETECTED:"):
-                    hpa_status = line.split(":", 1)[1]
-                    if hpa_status == "true":
-                        self.log("HPA (Hidden Protected Area) detected and will be removed")
-                elif line.startswith("ATA_SECURITY:"):
-                    security_info = line.split(":", 1)[1]
-                    self.log(f"ATA Security: {security_info}")
-                elif line.startswith("VERIFICATION:"):
-                    verification_msg = line.split(":", 1)[1]
-                    self.progress_label.configure(text=f"Status: {verification_msg}")
-                elif "STATUS:SUCCESS" in line: 
-                    self.wipe_finished(True, device_data)
-                    return
-                elif "STATUS:FAILED" in line:
-                    self.wipe_finished(False, device_data)
-                    return
-        except Empty: pass
+                if line:
+                    self.log(f"OUT: {line}")
+                    
+                    # Handle enhanced script output formats
+                    if line.startswith("PROGRESS:"):
+                        self.update_progress_from_line(line)
+                    elif line.startswith("DEVICE_TYPE:"):
+                        device_type = line.split(":", 1)[1] if ":" in line else "unknown"
+                        self.log(f"Device type detected: {device_type}")
+                    elif line.startswith("SANITIZE_METHOD:"):
+                        method = line.split(":", 1)[1] if ":" in line else "unknown"
+                        self.progress_label.configure(text=f"Status: Using {method} method")
+                    elif line.startswith("HPA_DETECTED:"):
+                        hpa_status = line.split(":", 1)[1] if ":" in line else "unknown"
+                        if hpa_status == "true":
+                            self.log("HPA (Hidden Protected Area) detected and will be removed")
+                    elif line.startswith("ATA_SECURITY:"):
+                        security_info = line.split(":", 1)[1] if ":" in line else ""
+                        self.log(f"ATA Security: {security_info}")
+                    elif line.startswith("VERIFICATION:"):
+                        verification_msg = line.split(":", 1)[1] if ":" in line else ""
+                        self.progress_label.configure(text=f"Status: {verification_msg}")
+                    elif "STATUS:SUCCESS" in line: 
+                        self.wipe_finished(True, device_data)
+                        return
+                    elif "STATUS:FAILED" in line:
+                        self.wipe_finished(False, device_data)
+                        return
+        except Empty: 
+            pass
+            
         try:
             while True:
                 line = q_err.get_nowait().strip()
-                if "MiB/s" in line or "GiB/s" in line:
-                    parts = line.split()
-                    try:
-                        wiped_raw, speed = parts[0], parts[-1].strip("[]")
-                        wiped_bytes = 0
-                        if   wiped_raw.endswith("GiB"): wiped_bytes = float(wiped_raw[:-3]) * (1024**3)
-                        elif wiped_raw.endswith("MiB"): wiped_bytes = float(wiped_raw[:-3]) * (1024**2)
-                        self.data_label.configure(text=f"Wiped: {self.bytes_to_gib_str(wiped_bytes)} / {self.bytes_to_gib_str(self.current_device_total_size)}")
-                        self.speed_label.configure(text=f"Speed: {speed}")
-                    except (IndexError, ValueError): pass
-                else: self.log(f"ERR: {line}")
-        except Empty: pass
-        if self.process.poll() is None: self.after(100, self.check_queues, q_out, q_err, device_data)
-        elif self.process.returncode != 0: self.wipe_finished(False, device_data)
+                if line:
+                    # Handle different types of stderr output
+                    if "[INFO]" in line or "[WARN]" in line or "[ERROR]" in line:
+                        # Enhanced script logging
+                        self.log(f"LOG: {line}")
+                    elif "MiB/s" in line or "GiB/s" in line:
+                        # pv progress output
+                        parts = line.split()
+                        try:
+                            if len(parts) >= 2:
+                                wiped_raw = parts[0]
+                                speed = parts[-1].strip("[]")
+                                wiped_bytes = 0
+                                
+                                if wiped_raw.endswith("GiB"): 
+                                    wiped_bytes = float(wiped_raw[:-3]) * (1024**3)
+                                elif wiped_raw.endswith("MiB"): 
+                                    wiped_bytes = float(wiped_raw[:-3]) * (1024**2)
+                                elif wiped_raw.endswith("KiB"): 
+                                    wiped_bytes = float(wiped_raw[:-3]) * 1024
+                                
+                                self.data_label.configure(
+                                    text=f"Wiped: {self.bytes_to_gib_str(wiped_bytes)} / {self.bytes_to_gib_str(self.current_device_total_size)}")
+                                self.speed_label.configure(text=f"Speed: {speed}")
+                        except (IndexError, ValueError, AttributeError): 
+                            pass
+                    elif "%" in line and ("ETA" in line or "elapsed" in line):
+                        # pv percentage and time estimates
+                        self.log(f"PROGRESS: {line}")
+                    else: 
+                        self.log(f"ERR: {line}")
+        except Empty: 
+            pass
+            
+        if self.process and self.process.poll() is None: 
+            self.after(100, self.check_queues, q_out, q_err, device_data)
+        elif self.process and self.process.returncode != 0: 
+            self.wipe_finished(False, device_data)
             
     def bytes_to_gib_str(self, num_bytes):
-        if num_bytes == 0: return "0.00 GiB"
+        if num_bytes == 0: 
+            return "0.00 GiB"
         return f"{num_bytes / (1024**3):.2f} GiB"
         
     def update_progress_from_line(self, line):
         try:
-            parts = line.split(':'); progress_part, status_message = parts[1], parts[2]
-            current_pass, total_passes = map(int, progress_part.split('/'))
-            self.progress_bar.set(float(current_pass) / float(total_passes))
-            self.progress_label.configure(text=f"Status: Pass {current_pass}/{total_passes} - {status_message}")
-        except (IndexError, ValueError): pass
+            parts = line.split(':')
+            if len(parts) >= 3:
+                progress_part = parts[1]
+                status_message = parts[2]
+                
+                if '/' in progress_part:
+                    current_pass, total_passes = map(int, progress_part.split('/'))
+                    self.progress_bar.set(float(current_pass) / float(total_passes))
+                    self.progress_label.configure(text=f"Status: Pass {current_pass}/{total_passes} - {status_message}")
+        except (IndexError, ValueError, AttributeError): 
+            pass
             
     def wipe_finished(self, success, device_data):
         self.progress_bar.set(1.0)
@@ -552,7 +662,7 @@ class WipeProgressFrame(customtkinter.CTkFrame):
             self.time_label.configure(text=f"Elapsed: {str(datetime.timedelta(seconds=int(elapsed)))}")
             self.after(1000, self.update_timer)
 
-# --- New Completion Frame (Certificate generation happens here) ---
+# --- Completion Frame (Certificate generation happens here) ---
 class CompletionFrame(customtkinter.CTkFrame):
     def __init__(self, parent, controller):
         super().__init__(parent)
@@ -648,28 +758,32 @@ class CompletionFrame(customtkinter.CTkFrame):
                 f"Generating certificate {i}/{t} for /dev/{d}..."))
             
             try:
-                # Call external certificate generator script
-                result = subprocess.run([
-                    'bash', CERT_GENERATOR_PATH, 
-                    device_path, 
-                    serial_number, 
-                    'Success'
-                ], capture_output=True, text=True, timeout=30)
-                
-                if result.returncode == 0:
-                    success_count += 1
-                    self.after(0, lambda d=device['name']: self.update_cert_status(
-                        f"✅ Certificate generated successfully for /dev/{d}"))
+                # Call external certificate generator script if it exists
+                if os.path.exists(CERT_GENERATOR_PATH) and os.access(CERT_GENERATOR_PATH, os.X_OK):
+                    result = subprocess.run([
+                        'bash', CERT_GENERATOR_PATH, 
+                        device_path, 
+                        serial_number, 
+                        'Success'
+                    ], capture_output=True, text=True, timeout=30)
+                    
+                    if result.returncode == 0:
+                        success_count += 1
+                        self.after(0, lambda d=device['name']: self.update_cert_status(
+                            f"✅ Certificate generated successfully for /dev/{d}"))
+                    else:
+                        self.after(0, lambda d=device['name'], e=result.stderr: self.update_cert_status(
+                            f"❌ Certificate generation failed for /dev/{d}: {e[:100]}"))
                 else:
-                    self.after(0, lambda d=device['name'], e=result.stderr: self.update_cert_status(
-                        f"❌ Certificate generation failed for /dev/{d}: {e}"))
+                    self.after(0, lambda d=device['name']: self.update_cert_status(
+                        f"⚠️ Certificate generator not found for /dev/{d}"))
                         
             except subprocess.TimeoutExpired:
                 self.after(0, lambda d=device['name']: self.update_cert_status(
                     f"❌ Certificate generation timed out for /dev/{d}"))
             except Exception as e:
                 self.after(0, lambda d=device['name'], e=str(e): self.update_cert_status(
-                    f"❌ Error generating certificate for /dev/{d}: {e}"))
+                    f"❌ Error generating certificate for /dev/{d}: {e[:100]}"))
         
         # Final status update
         self.after(0, lambda: self.certificate_generation_complete(success_count, total_devices))
@@ -693,6 +807,7 @@ class CompletionFrame(customtkinter.CTkFrame):
             completion_message += "All certificates generated successfully! ✅\n"
         else:
             completion_message += f"⚠️ {total_devices - success_count} certificates failed to generate.\n"
+            completion_message += "Check that generate_certificate.sh exists and is executable.\n"
             
         self.cert_textbox.configure(state="normal")
         self.cert_textbox.insert("end", completion_message)
@@ -703,7 +818,7 @@ class CompletionFrame(customtkinter.CTkFrame):
 if __name__ == "__main__":
     if os.geteuid() != 0:
         print("Error: This application requires root privileges.")
-        print("Please run with 'sudo python3 obliterator_gui_modified.py'")
+        print("Please run with 'sudo python3 obliterator_gui_fixed.py'")
         sys.exit(1)
     else:
         # Check authentication before starting main app
