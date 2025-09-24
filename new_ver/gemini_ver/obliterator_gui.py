@@ -79,7 +79,7 @@ class App(customtkinter.CTk):
         else: print(f"Warning: Theme file not found at {THEME_FILE}.")
         
         self.title(APP_NAME)
-        self.geometry("1200x800")
+        self.geometry("1920x1080")
         self.grid_rowconfigure(0, weight=1); self.grid_columnconfigure(0, weight=1)
 
         self.container = customtkinter.CTkFrame(self, fg_color="transparent")
