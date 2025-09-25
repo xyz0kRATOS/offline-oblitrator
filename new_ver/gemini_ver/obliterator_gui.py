@@ -80,7 +80,7 @@ class App(customtkinter.CTk):
         else: print(f"Warning: Theme file not found at {THEME_FILE}.")
         
         self.title(APP_NAME)
-        self.geometry("1920x1080")
+        self.geometry("1200x800")
         self.grid_rowconfigure(0, weight=1); self.grid_columnconfigure(0, weight=1)
 
         self.container = customtkinter.CTkFrame(self, fg_color="transparent")
@@ -452,9 +452,9 @@ class WipeProgressFrame(customtkinter.CTkFrame):
         self.title_label.pack(pady=(0,20), padx=50)
         self.progress_label = customtkinter.CTkLabel(center_frame, text="Status: Initializing...", font=FONT_BODY)
         self.progress_label.pack(pady=10, padx=20)
-        
-        self.progress_bar = customtkinter.CTkProgressBar(center_frame, width=500, mode='indeterminate'); self.progress_bar.pack(pady=10, padx=20)
-        
+        self.progress_bar = customtkinter.CTkProgressBar(center_frame, width=500)
+        self.progress_bar.set(0)
+        self.progress_bar.pack(pady=10, padx=20)
         
         info_frame = customtkinter.CTkFrame(center_frame, fg_color="transparent")
         info_frame.pack(pady=20, padx=20, fill="x")
@@ -463,7 +463,9 @@ class WipeProgressFrame(customtkinter.CTkFrame):
         self.time_label.grid(row=0, column=0, sticky="w")
         self.data_label = customtkinter.CTkLabel(info_frame, text="Wiped: 0.00 / 0.00 GiB", font=FONT_MONO)
         self.data_label.grid(row=0, column=1)
-
+        self.speed_label = customtkinter.CTkLabel(info_frame, text="Speed: 0 MB/s", font=FONT_MONO)
+        self.speed_label.grid(row=0, column=2, sticky="e")
+        
         self.log_textbox = CustomTextbox(center_frame, height=250, width=600, state="disabled", 
                                        font=FONT_MONO, scrollbar_button_color="#FFD700")
         self.log_textbox.pack(pady=10, padx=20)
