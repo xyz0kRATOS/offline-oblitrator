@@ -452,8 +452,9 @@ class WipeProgressFrame(customtkinter.CTkFrame):
         self.title_label.pack(pady=(0,20), padx=50)
         self.progress_label = customtkinter.CTkLabel(center_frame, text="Status: Initializing...", font=FONT_BODY)
         self.progress_label.pack(pady=10, padx=20)
-        self.progress_bar = customtkinter.CTkProgressBar(self, mode="indeterminate")
-        self.progress_bar.pack(pady=20, padx=100, fill="x")
+        self.progress_bar = customtkinter.CTkProgressBar(center_frame, width=500)
+        self.progress_bar.set(0)
+        self.progress_bar.pack(pady=10, padx=20)
         
         info_frame = customtkinter.CTkFrame(center_frame, fg_color="transparent")
         info_frame.pack(pady=20, padx=20, fill="x")
