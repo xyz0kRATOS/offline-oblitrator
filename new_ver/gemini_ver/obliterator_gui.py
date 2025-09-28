@@ -744,11 +744,46 @@ class CompletionFrame(customtkinter.CTkFrame):
         # Generate certificates in a separate thread
         threading.Thread(target=self.run_certificate_generation, daemon=True).start()
         
+    # Modified run_certificate_generation method for CompletionFrame class
+    # Replace the existing run_certificate_generation method with this one
+    
     def run_certificate_generation(self):
         """Run certificate generation for each device"""
         success_count = 0
+        pdf_success_count = 0
         total_devices = len(self.wiped_devices)
+        generated_json_files = []  # Track generated JSON files
         
+        # Initialize backend client if available
+        backend_client = None
+        try:
+            from certificate_backend_integration import CertificateBackendClient, SupabaseAuth
+            
+            # Use your Supabase credentials
+            SUPABASE_URL = "https://ajqmxtjlxplnbofwoxtf.supabase.co"
+            SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFqcW14dGpseHBsbmJvZndveHRmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgzNzMzMjEsImV4cCI6MjA3Mzk0OTMyMX0.m9C9chwlriwRojINYQrWSo96wyJTKOQONkqsi8-xsBQ"
+            
+            # Try to authenticate (you may want to store credentials securely)
+            # For now, using environment variables or hardcoded test credentials
+            supabase_auth = SupabaseAuth(SUPABASE_URL, SUPABASE_KEY)
+            # You may want to prompt for credentials or use saved ones
+            success, error = supabase_auth.sign_in_with_password("admin@obliterator.local", "ObliteratorAdmin2024")
+            
+            if success:
+                backend_client = CertificateBackendClient("http://localhost:8000", supabase_auth=supabase_auth)
+                if backend_client.test_connection():
+                    self.after(0, lambda: self.update_cert_status("✅ Backend connected - PDFs will be generated"))
+                else:
+                    backend_client = None
+                    self.after(0, lambda: self.update_cert_status("⚠️ Backend offline - JSON only mode"))
+            else:
+                self.after(0, lambda: self.update_cert_status(f"⚠️ Backend auth failed - JSON only mode"))
+        except ImportError:
+            self.after(0, lambda: self.update_cert_status("⚠️ Backend module not found - JSON only mode"))
+        except Exception as e:
+            self.after(0, lambda: self.update_cert_status(f"⚠️ Backend error: {str(e)[:50]}"))
+        
+        # Generate certificates for each device
         for i, device in enumerate(self.wiped_devices, 1):
             device_path = f"/dev/{device['name']}"
             serial_number = device['serial_number']
@@ -758,19 +793,69 @@ class CompletionFrame(customtkinter.CTkFrame):
                 f"Generating certificate {i}/{t} for /dev/{d}..."))
             
             try:
-                # Call external certificate generator script if it exists
+                # STEP 1: Generate JSON certificate using shell script (existing functionality)
                 if os.path.exists(CERT_GENERATOR_PATH) and os.access(CERT_GENERATOR_PATH, os.X_OK):
                     result = subprocess.run([
                         'bash', CERT_GENERATOR_PATH, 
                         device_path, 
                         serial_number, 
-                        'Success'
+                        'Success',
+                        APP_NAME,  # Tool name
+                        APP_VERSION  # Tool version
                     ], capture_output=True, text=True, timeout=30)
                     
                     if result.returncode == 0:
                         success_count += 1
-                        self.after(0, lambda d=device['name']: self.update_cert_status(
-                            f"✅ Certificate generated successfully for /dev/{d}"))
+                        
+                        # Extract the generated JSON filename from script output
+                        output_lines = result.stdout.split('\n')
+                        json_filepath = None
+                        for line in output_lines:
+                            if line.startswith("File:"):
+                                json_filepath = line.replace("File:", "").strip()
+                                break
+                        
+                        if not json_filepath:
+                            # Try to construct the expected filename
+                            timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+                            json_filename = f"wipe-{timestamp}-{serial_number}.json"
+                            json_filepath = os.path.join(CERT_DIR, json_filename)
+                        
+                        if os.path.exists(json_filepath):
+                            generated_json_files.append(json_filepath)
+                            self.after(0, lambda d=device['name']: self.update_cert_status(
+                                f"✅ JSON certificate generated for /dev/{d}"))
+                            
+                            # STEP 2: Send to backend for PDF generation if available
+                            if backend_client:
+                                self.after(0, lambda d=device['name']: self.update_cert_status(
+                                    f"📤 Sending /dev/{d} certificate to backend..."))
+                                
+                                success, pdf_url, error = backend_client.generate_pdf_from_json(json_filepath)
+                                
+                                if success:
+                                    pdf_success_count += 1
+                                    
+                                    # Download PDF locally if URL provided
+                                    if pdf_url:
+                                        pdf_filename = os.path.basename(json_filepath).replace('.json', '.pdf')
+                                        pdf_path = os.path.join(CERT_DIR, pdf_filename)
+                                        
+                                        if backend_client.download_pdf(pdf_url, pdf_path):
+                                            self.after(0, lambda d=device['name']: self.update_cert_status(
+                                                f"✅ PDF downloaded for /dev/{d}"))
+                                        else:
+                                            self.after(0, lambda d=device['name']: self.update_cert_status(
+                                                f"⚠️ PDF generated but download failed for /dev/{d}"))
+                                    else:
+                                        self.after(0, lambda d=device['name']: self.update_cert_status(
+                                            f"✅ PDF generated for /dev/{d} (stored in backend)"))
+                                else:
+                                    self.after(0, lambda d=device['name'], e=error: self.update_cert_status(
+                                        f"⚠️ PDF generation failed for /dev/{d}: {e[:50]}"))
+                        else:
+                            self.after(0, lambda d=device['name']: self.update_cert_status(
+                                f"⚠️ JSON file not found after generation for /dev/{d}"))
                     else:
                         self.after(0, lambda d=device['name'], e=result.stderr: self.update_cert_status(
                             f"❌ Certificate generation failed for /dev/{d}: {e[:100]}"))
@@ -786,7 +871,35 @@ class CompletionFrame(customtkinter.CTkFrame):
                     f"❌ Error generating certificate for /dev/{d}: {e[:100]}"))
         
         # Final status update
-        self.after(0, lambda: self.certificate_generation_complete(success_count, total_devices))
+        self.after(0, lambda: self.certificate_generation_complete_with_pdf(
+            success_count, pdf_success_count, total_devices))
+
+    def certificate_generation_complete_with_pdf(self, json_count, pdf_count, total_devices):
+        """Handle completion of certificate generation with PDF status"""
+        self.generate_certs_button.configure(state="normal", text="Generate Certificates")
+        
+        completion_message = f"\n{'='*50}\nCertificate Generation Complete!\n{'='*50}\n"
+        completion_message += f"JSON Certificates: {json_count}/{total_devices} generated\n"
+        
+        if pdf_count > 0:
+            completion_message += f"PDF Certificates: {pdf_count}/{total_devices} generated\n"
+        
+        completion_message += f"Location: {CERT_DIR}\n\n"
+        
+        if json_count == total_devices:
+            if pdf_count == total_devices:
+                completion_message += "All certificates (JSON + PDF) generated successfully! ✅\n"
+            elif pdf_count > 0:
+                completion_message += f"All JSON certificates generated! {pdf_count} PDFs created.\n"
+            else:
+                completion_message += "All JSON certificates generated! (Backend unavailable for PDFs)\n"
+        else:
+            completion_message += f"⚠️ {total_devices - json_count} certificates failed to generate.\n"
+            
+        self.cert_textbox.configure(state="normal")
+        self.cert_textbox.insert("end", completion_message)
+        self.cert_textbox.see("end")
+        self.cert_textbox.configure(state="disabled")
         
     def update_cert_status(self, message):
         """Update certificate generation status in UI"""
