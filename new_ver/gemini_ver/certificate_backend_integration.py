@@ -9,26 +9,127 @@ import os
 import time
 from typing import Dict, Optional, Tuple
 from datetime import datetime
+import getpass
+
+class SupabaseAuth:
+    """Handle Supabase authentication"""
+    
+    def __init__(self, supabase_url: str, supabase_key: str):
+        """Initialize Supabase auth client"""
+        self.supabase_url = supabase_url.rstrip('/')
+        self.supabase_key = supabase_key
+        self.auth_token = None
+        self.user_info = None
+    
+    def sign_in_with_password(self, email: str, password: str) -> Tuple[bool, Optional[str]]:
+        """
+        Sign in with email and password
+        
+        Returns:
+            Tuple of (success, error_message)
+        """
+        try:
+            auth_url = f"{self.supabase_url}/auth/v1/token?grant_type=password"
+            headers = {
+                'apikey': self.supabase_key,
+                'Content-Type': 'application/json'
+            }
+            payload = {
+                'email': email,
+                'password': password
+            }
+            
+            response = requests.post(auth_url, json=payload, headers=headers, timeout=10)
+            
+            if response.status_code == 200:
+                auth_data = response.json()
+                self.auth_token = auth_data.get('access_token')
+                self.user_info = auth_data.get('user', {})
+                print(f"✅ Successfully authenticated as: {self.user_info.get('email', 'Unknown')}")
+                return True, None
+            else:
+                error_msg = response.json().get('error_description', f'Authentication failed: {response.status_code}')
+                return False, error_msg
+                
+        except Exception as e:
+            return False, str(e)
+    
+    def sign_up_with_password(self, email: str, password: str) -> Tuple[bool, Optional[str]]:
+        """
+        Sign up with email and password
+        
+        Returns:
+            Tuple of (success, error_message)
+        """
+        try:
+            signup_url = f"{self.supabase_url}/auth/v1/signup"
+            headers = {
+                'apikey': self.supabase_key,
+                'Content-Type': 'application/json'
+            }
+            payload = {
+                'email': email,
+                'password': password
+            }
+            
+            response = requests.post(signup_url, json=payload, headers=headers, timeout=10)
+            
+            if response.status_code == 200:
+                auth_data = response.json()
+                self.auth_token = auth_data.get('access_token')
+                self.user_info = auth_data.get('user', {})
+                print(f"✅ Successfully signed up and authenticated as: {self.user_info.get('email', 'Unknown')}")
+                return True, None
+            else:
+                error_msg = response.json().get('error_description', f'Sign up failed: {response.status_code}')
+                return False, error_msg
+                
+        except Exception as e:
+            return False, str(e)
+    
+    def get_auth_headers(self) -> Dict[str, str]:
+        """Get headers with authentication token"""
+        if self.auth_token:
+            return {
+                'Authorization': f'Bearer {self.auth_token}',
+                'apikey': self.supabase_key
+            }
+        return {'apikey': self.supabase_key}
+    
+    def is_authenticated(self) -> bool:
+        """Check if user is authenticated"""
+        return self.auth_token is not None
+
 
 class CertificateBackendClient:
     """Client for interacting with the certificate PDF generation backend"""
     
-    def __init__(self, backend_url: str = "http://localhost:8000", auth_token: Optional[str] = None):
+    def __init__(self, backend_url: str = "http://localhost:8000", auth_token: Optional[str] = None, 
+                 supabase_auth: Optional[SupabaseAuth] = None):
         """
         Initialize the backend client
         
         Args:
             backend_url: Base URL of the backend server
             auth_token: Optional authentication token if backend requires auth
+            supabase_auth: Optional Supabase authentication client
         """
         self.backend_url = backend_url.rstrip('/')
         self.auth_token = auth_token
+        self.supabase_auth = supabase_auth
+        
         self.headers = {
             'Content-Type': 'application/json',
             'User-Agent': 'CertificateClient/1.0'
         }
-        if auth_token:
+        
+        # Add authentication headers
+        if supabase_auth and supabase_auth.is_authenticated():
+            self.headers.update(supabase_auth.get_auth_headers())
+            print(f"🔐 Using Supabase authentication for user: {supabase_auth.user_info.get('email', 'Unknown')}")
+        elif auth_token:
             self.headers['Authorization'] = f'Bearer {auth_token}'
+            print(f"🔐 Using provided auth token")
         
         # Set up session for connection reuse
         self.session = requests.Session()
@@ -329,9 +430,51 @@ class CertificateBackendClient:
             self.session.close()
 
 
+def authenticate_user(supabase_url: str, supabase_key: str) -> Optional[SupabaseAuth]:
+    """
+    Interactive authentication with Supabase
+    
+    Returns:
+        SupabaseAuth instance if successful, None otherwise
+    """
+    auth_client = SupabaseAuth(supabase_url, supabase_key)
+    
+    print(f"\n🔐 Authentication Required")
+    print(f"Supabase URL: {supabase_url}")
+    print(f"Choose authentication method:")
+    print(f"1. Sign in with existing account")
+    print(f"2. Create new account")
+    
+    while True:
+        choice = input("Enter choice (1 or 2): ").strip()
+        if choice in ['1', '2']:
+            break
+        print("Please enter 1 or 2")
+    
+    email = input("Enter email: ").strip()
+    password = getpass.getpass("Enter password: ")
+    
+    if choice == '1':
+        success, error = auth_client.sign_in_with_password(email, password)
+        if not success:
+            print(f"❌ Sign in failed: {error}")
+            return None
+    else:
+        success, error = auth_client.sign_up_with_password(email, password)
+        if not success:
+            print(f"❌ Sign up failed: {error}")
+            return None
+    
+    return auth_client
+
+
 # Standalone script functionality
 if __name__ == "__main__":
     import argparse
+    
+    # Default Supabase configuration
+    DEFAULT_SUPABASE_URL = "https://ajqmxtjlxplnbofwoxtf.supabase.co"
+    DEFAULT_SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFqcW14dGpseHBsbmJvZndveHRmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgzNzMzMjEsImV4cCI6MjA3Mzk0OTMyMX0.m9C9chwlriwRojINYQrWSo96wyJTKOQONkqsi8-xsBQ"
     
     parser = argparse.ArgumentParser(description='Generate PDF certificates from JSON')
     parser.add_argument('--backend-url', default='http://localhost:8000',
@@ -343,16 +486,47 @@ if __name__ == "__main__":
     parser.add_argument('--single-file', help='Process a single JSON file')
     parser.add_argument('--verbose', '-v', action='store_true', 
                        help='Enable verbose logging')
+    parser.add_argument('--supabase-url', default=DEFAULT_SUPABASE_URL,
+                       help='Supabase URL for authentication')
+    parser.add_argument('--supabase-key', default=DEFAULT_SUPABASE_KEY,
+                       help='Supabase anon key for authentication')
+    parser.add_argument('--no-auth', action='store_true',
+                       help='Skip authentication (use for testing)')
+    parser.add_argument('--email', help='Email for automatic authentication')
+    parser.add_argument('--password', help='Password for automatic authentication')
     
     args = parser.parse_args()
     
-    # Initialize client
-    print(f"🚀 Initializing Certificate Backend Client")
-    print(f"Backend URL: {args.backend_url}")
-    if args.auth_token:
-        print(f"Using authentication token: {'*' * (len(args.auth_token)-4)}{args.auth_token[-4:]}")
+    # Initialize authentication if not disabled
+    supabase_auth = None
+    if not args.no_auth:
+        if args.email and args.password:
+            # Automatic authentication
+            print(f"🔐 Authenticating with provided credentials...")
+            supabase_auth = SupabaseAuth(args.supabase_url, args.supabase_key)
+            success, error = supabase_auth.sign_in_with_password(args.email, args.password)
+            if not success:
+                print(f"❌ Authentication failed: {error}")
+                # Try to create account
+                print(f"🔄 Trying to create new account...")
+                success, error = supabase_auth.sign_up_with_password(args.email, args.password)
+                if not success:
+                    print(f"❌ Account creation failed: {error}")
+                    exit(1)
+        else:
+            # Interactive authentication
+            supabase_auth = authenticate_user(args.supabase_url, args.supabase_key)
+            if not supabase_auth:
+                print("❌ Authentication required. Exiting.")
+                exit(1)
+    else:
+        print("⚠️  Authentication skipped (--no-auth flag used)")
     
-    client = CertificateBackendClient(args.backend_url, args.auth_token)
+    # Initialize client
+    print(f"\n🚀 Initializing Certificate Backend Client")
+    print(f"Backend URL: {args.backend_url}")
+    
+    client = CertificateBackendClient(args.backend_url, args.auth_token, supabase_auth)
     
     # Test connection
     print(f"\n🔌 Testing connection to backend...")
