@@ -814,6 +814,24 @@ class CompletionFrame(customtkinter.CTkFrame):
         self.cert_textbox.see("end")
         self.cert_textbox.configure(state="disabled")
 
+    # In CompletionFrame.__init__, after existing UI setup:
+    def setup_certificate_viewer(self):
+        # Import the viewer module
+        from certificate_viewer_addon import CertificateViewerFrame
+        
+        # Create container for viewer
+        viewer_container = customtkinter.CTkFrame(self)
+        viewer_container.grid(row=3, column=0, padx=20, pady=10, sticky="nsew")
+        self.grid_rowconfigure(3, weight=1)
+        
+        # Add the certificate viewer
+        self.cert_viewer = CertificateViewerFrame(
+            viewer_container, 
+            cert_dir=CERT_DIR
+        )
+        self.cert_viewer.pack(fill="both", expand=True)
+
+
 # --- Entry Point ---
 if __name__ == "__main__":
     if os.geteuid() != 0:
