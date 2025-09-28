@@ -167,56 +167,113 @@ class CertificateBackendClient:
             print(f"Backend connection test failed: {e}")
             return False
     
+    # Enhanced convert_obliterator_to_sanitization_format method
+    # Replace the existing method in certificate_backend_integration.py with this one
+    
     def convert_obliterator_to_sanitization_format(self, obliterator_json: Dict) -> Dict:
         """
-        Convert Obliterator JSON format to the backend's expected format
-        
-        Args:
-            obliterator_json: JSON certificate from generate_certificate.sh
-            
-        Returns:
-            Dictionary in the format expected by the backend
+        Convert Obliterator JSON format to the backend's expected format with ALL fields
         """
         try:
             # Extract the certificate payload if it's wrapped
             if 'certificate_payload' in obliterator_json:
                 cert_data = obliterator_json['certificate_payload']
+                signature_data = obliterator_json.get('signature', {})
             else:
                 cert_data = obliterator_json
+                signature_data = {}
             
-            # Extract media info with better error handling
+            # Extract all sections
+            metadata = cert_data.get('certificate_metadata', {})
             media_info = cert_data.get('media_information', {})
             tool_info = cert_data.get('tool_information', {})
             sanitization_event = cert_data.get('sanitization_event', {})
+            sanitization_details = cert_data.get('sanitization_details', {})
+            host_info = cert_data.get('host_system_information', {})
             compliance_info = cert_data.get('compliance_information', {})
             
             # Get operator info safely
             operator_info = sanitization_event.get('operator', {})
-            if isinstance(operator_info, str):
-                hostname = operator_info
-            else:
-                hostname = operator_info.get('hostname', 'Unknown')
             
-            # Map to backend format with more robust field extraction
+            # Map ALL fields to comprehensive backend format
             sanitization_data = {
-                'manufacturer': str(media_info.get('manufacturer', 'Unknown')),
-                'model': str(media_info.get('model', 'Unknown')),
-                'serial_number': str(media_info.get('serial_number', 'UNKNOWN')),
+                # Certificate metadata
+                'certificate_id': metadata.get('certificate_id', ''),
+                'certificate_version': metadata.get('version', '2.0'),
+                'generated_timestamp': metadata.get('generated_timestamp', datetime.now().isoformat()),
+                'nist_reference': metadata.get('nist_reference', 'NIST SP 800-88r2'),
+                
+                # Tool information
+                'tool_name': tool_info.get('name', 'OBLITERATOR'),
+                'tool_version': tool_info.get('version', 'Unknown'),
+                'sanitization_method': tool_info.get('method', 'Purge'),
+                'sanitization_technique': tool_info.get('technique', '5-Pass Overwrite'),
+                'verification_method': tool_info.get('verification_method', 'Zero-byte verification'),
+                
+                # Media/Device information
+                'device_path': media_info.get('device_path', ''),
+                'manufacturer': media_info.get('manufacturer', 'Unknown'),
+                'model': media_info.get('model', 'Unknown'),
+                'serial_number': media_info.get('serial_number', 'UNKNOWN'),
+                'firmware_version': media_info.get('firmware_version', 'Unknown'),
+                'interface_type': media_info.get('interface_type', 'Unknown'),
+                'media_type': media_info.get('media_type', 'Block Device'),
+                'device_type': media_info.get('device_type', 'Unknown'),
+                'capacity_bytes': media_info.get('capacity_bytes', 0),
+                'capacity_gb': media_info.get('capacity_gb', 0),
+                'pre_sanitization_classification': media_info.get('pre_sanitization_classification', 'Unknown'),
+                'post_sanitization_classification': media_info.get('post_sanitization_classification', 'Unclassified'),
+                
+                # Sanitization event details
+                'sanitization_timestamp': sanitization_event.get('timestamp', ''),
+                'sanitization_status': sanitization_event.get('status', 'Success'),
+                'operator_username': operator_info.get('system_user', 'unknown'),
+                'operator_hostname': operator_info.get('hostname', 'unknown'),
+                
+                # Sanitization process details
+                'passes_performed': sanitization_details.get('passes_performed', []),
+                'verification_status': sanitization_details.get('verification_status', 'Passed'),
+                'verification_details': sanitization_details.get('verification_details', ''),
+                
+                # Host system information
+                'host_hostname': host_info.get('hostname', 'unknown'),
+                'host_operating_system': host_info.get('operating_system', 'Unknown'),
+                'host_kernel_version': host_info.get('kernel_version', 'unknown'),
+                'host_architecture': host_info.get('architecture', 'unknown'),
+                'host_system_manufacturer': host_info.get('system_manufacturer', 'Unknown'),
+                'host_system_model': host_info.get('system_model', 'Unknown'),
+                'host_system_serial': host_info.get('system_serial', 'Unknown'),
+                'execution_environment': host_info.get('execution_environment', 'Unknown'),
+                'tools_used': host_info.get('tools_used', []),
+                
+                # Compliance information
+                'compliance_standard': compliance_info.get('standard', 'NIST SP 800-88r2'),
+                'residual_risk_assessment': compliance_info.get('residual_risk_assessment', ''),
+                'recommended_follow_up': compliance_info.get('recommended_follow_up', ''),
+                
+                # Digital signature (if present)
+                'signature_algorithm': signature_data.get('algorithm', ''),
+                'signature_format': signature_data.get('format', ''),
+                'signature_value': signature_data.get('value', ''),
+                'signature_timestamp': signature_data.get('signed_timestamp', ''),
+                
+                # Backend compatibility fields (original format)
                 'property_number': None,  # Not in Obliterator format
-                'media_type': str(media_info.get('media_type', 'Block Device')),
-                'media_source': str(hostname),
-                'pre_sanitization_confidentiality': str(media_info.get('pre_sanitization_classification', 'Unknown')),
-                'sanitization_method': str(tool_info.get('method', 'Clear')),
-                'sanitization_technique': str(tool_info.get('technique', '5-Pass Overwrite')),
+                'media_source': operator_info.get('hostname', 'Unknown'),
                 'tool_used': f"{tool_info.get('name', 'OBLITERATOR')} v{tool_info.get('version', 'Unknown')}",
-                'verification_method': str(tool_info.get('verification_method', 'Zero-byte verification')),
-                'post_sanitization_confidentiality': str(media_info.get('post_sanitization_classification', 'Unclassified')),
-                'post_sanitization_destination': 'Storage/Disposal',  # Default value
-                # Add timestamp if available
-                'timestamp': cert_data.get('timestamp', datetime.now().isoformat())
+                'post_sanitization_destination': 'Storage/Disposal',
+                
+                # Metadata for tracking
+                'created_at': datetime.now().isoformat(),
+                'json_file_hash': None  # Can be calculated if needed
             }
             
-            print(f"📝 Converted data: {json.dumps(sanitization_data, indent=2)}")
+            # Convert lists to JSON strings for database storage
+            if isinstance(sanitization_data['passes_performed'], list):
+                sanitization_data['passes_performed'] = json.dumps(sanitization_data['passes_performed'])
+            if isinstance(sanitization_data['tools_used'], list):
+                sanitization_data['tools_used'] = json.dumps(sanitization_data['tools_used'])
+            
             return sanitization_data
             
         except Exception as e:
