@@ -13,7 +13,7 @@ from datetime import datetime
 class CertificateBackendClient:
     """Client for interacting with the certificate PDF generation backend"""
     
-    def __init__(self, backend_url: str = "http://10.12.71.177:8000/generate-certificate", auth_token: Optional[str] = None):
+    def __init__(self, backend_url: str = "http://localhost:8000", auth_token: Optional[str] = None):
         """
         Initialize the backend client
         
@@ -24,16 +24,44 @@ class CertificateBackendClient:
         self.backend_url = backend_url.rstrip('/')
         self.auth_token = auth_token
         self.headers = {
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            'User-Agent': 'CertificateClient/1.0'
         }
         if auth_token:
             self.headers['Authorization'] = f'Bearer {auth_token}'
+        
+        # Set up session for connection reuse
+        self.session = requests.Session()
+        self.session.headers.update(self.headers)
     
     def test_connection(self) -> bool:
         """Test connection to the backend server"""
         try:
-            response = requests.get(f"{self.backend_url}/health", timeout=5)
-            return response.status_code == 200
+            print(f"Testing connection to: {self.backend_url}")
+            
+            # Try multiple common health check endpoints
+            health_endpoints = ['/health', '/api/health', '/status', '/ping', '/']
+            
+            for endpoint in health_endpoints:
+                try:
+                    url = f"{self.backend_url}{endpoint}"
+                    print(f"Trying: {url}")
+                    response = self.session.get(url, timeout=10)
+                    print(f"Response status: {response.status_code}")
+                    
+                    if response.status_code in [200, 404]:  # 404 might mean endpoint exists but wrong path
+                        if response.status_code == 200:
+                            print(f"✅ Health check successful at {endpoint}")
+                        return True
+                        
+                except requests.exceptions.RequestException as e:
+                    print(f"Failed {endpoint}: {e}")
+                    continue
+            
+            # If no health endpoint works, try a simple GET to root
+            response = self.session.get(self.backend_url, timeout=10)
+            return response.status_code < 500  # Any response except server error
+            
         except Exception as e:
             print(f"Backend connection test failed: {e}")
             return False
@@ -48,36 +76,51 @@ class CertificateBackendClient:
         Returns:
             Dictionary in the format expected by the backend
         """
-        # Extract the certificate payload if it's wrapped
-        if 'certificate_payload' in obliterator_json:
-            cert_data = obliterator_json['certificate_payload']
-        else:
-            cert_data = obliterator_json
-        
-        # Extract media info
-        media_info = cert_data.get('media_information', {})
-        tool_info = cert_data.get('tool_information', {})
-        sanitization_event = cert_data.get('sanitization_event', {})
-        compliance_info = cert_data.get('compliance_information', {})
-        
-        # Map to backend format
-        sanitization_data = {
-            'manufacturer': media_info.get('manufacturer', 'Unknown'),
-            'model': media_info.get('model', 'Unknown'),
-            'serial_number': media_info.get('serial_number', 'UNKNOWN'),
-            'property_number': None,  # Not in Obliterator format
-            'media_type': media_info.get('media_type', 'Block Device'),
-            'media_source': sanitization_event.get('operator', {}).get('hostname', 'Unknown'),
-            'pre_sanitization_confidentiality': media_info.get('pre_sanitization_classification', 'Unknown'),
-            'sanitization_method': tool_info.get('method', 'Clear'),
-            'sanitization_technique': tool_info.get('technique', '5-Pass Overwrite'),
-            'tool_used': f"{tool_info.get('name', 'OBLITERATOR')} v{tool_info.get('version', 'Unknown')}",
-            'verification_method': tool_info.get('verification_method', 'Zero-byte verification'),
-            'post_sanitization_confidentiality': media_info.get('post_sanitization_classification', 'Unclassified'),
-            'post_sanitization_destination': 'Storage/Disposal'  # Default value
-        }
-        
-        return sanitization_data
+        try:
+            # Extract the certificate payload if it's wrapped
+            if 'certificate_payload' in obliterator_json:
+                cert_data = obliterator_json['certificate_payload']
+            else:
+                cert_data = obliterator_json
+            
+            # Extract media info with better error handling
+            media_info = cert_data.get('media_information', {})
+            tool_info = cert_data.get('tool_information', {})
+            sanitization_event = cert_data.get('sanitization_event', {})
+            compliance_info = cert_data.get('compliance_information', {})
+            
+            # Get operator info safely
+            operator_info = sanitization_event.get('operator', {})
+            if isinstance(operator_info, str):
+                hostname = operator_info
+            else:
+                hostname = operator_info.get('hostname', 'Unknown')
+            
+            # Map to backend format with more robust field extraction
+            sanitization_data = {
+                'manufacturer': str(media_info.get('manufacturer', 'Unknown')),
+                'model': str(media_info.get('model', 'Unknown')),
+                'serial_number': str(media_info.get('serial_number', 'UNKNOWN')),
+                'property_number': None,  # Not in Obliterator format
+                'media_type': str(media_info.get('media_type', 'Block Device')),
+                'media_source': str(hostname),
+                'pre_sanitization_confidentiality': str(media_info.get('pre_sanitization_classification', 'Unknown')),
+                'sanitization_method': str(tool_info.get('method', 'Clear')),
+                'sanitization_technique': str(tool_info.get('technique', '5-Pass Overwrite')),
+                'tool_used': f"{tool_info.get('name', 'OBLITERATOR')} v{tool_info.get('version', 'Unknown')}",
+                'verification_method': str(tool_info.get('verification_method', 'Zero-byte verification')),
+                'post_sanitization_confidentiality': str(media_info.get('post_sanitization_classification', 'Unclassified')),
+                'post_sanitization_destination': 'Storage/Disposal',  # Default value
+                # Add timestamp if available
+                'timestamp': cert_data.get('timestamp', datetime.now().isoformat())
+            }
+            
+            print(f"📝 Converted data: {json.dumps(sanitization_data, indent=2)}")
+            return sanitization_data
+            
+        except Exception as e:
+            print(f"❌ Error converting JSON format: {e}")
+            raise
     
     def generate_pdf_from_json(self, json_file_path: str) -> Tuple[bool, Optional[str], Optional[str]]:
         """
@@ -90,33 +133,88 @@ class CertificateBackendClient:
             Tuple of (success, pdf_url, error_message)
         """
         try:
+            print(f"📄 Reading JSON file: {json_file_path}")
+            
+            # Check if file exists
+            if not os.path.exists(json_file_path):
+                error_msg = f"JSON file not found: {json_file_path}"
+                print(f"❌ {error_msg}")
+                return False, None, error_msg
+            
             # Read the JSON file
-            with open(json_file_path, 'r') as f:
+            with open(json_file_path, 'r', encoding='utf-8') as f:
                 obliterator_json = json.load(f)
+            
+            print(f"✅ JSON loaded successfully")
             
             # Convert to backend format
             sanitization_data = self.convert_obliterator_to_sanitization_format(obliterator_json)
             
-            # Send to backend
-            response = requests.post(
-                f"{self.backend_url}/generate-certificate",
-                json=sanitization_data,
-                headers=self.headers,
-                timeout=30
-            )
+            # Try multiple possible endpoints for PDF generation
+            endpoints = [
+                '/generate-certificate',
+                '/api/generate-certificate', 
+                '/certificate/generate',
+                '/api/certificate/generate',
+                '/generate-pdf',
+                '/api/generate-pdf'
+            ]
             
-            if response.status_code == 200:
-                result = response.json()
-                pdf_url = result.get('pdf_url')
-                print(f"✅ PDF generated successfully: {pdf_url}")
-                return True, pdf_url, None
-            else:
-                error_msg = f"Backend returned {response.status_code}: {response.text}"
-                print(f"❌ PDF generation failed: {error_msg}")
-                return False, None, error_msg
+            for endpoint in endpoints:
+                try:
+                    url = f"{self.backend_url}{endpoint}"
+                    print(f"🚀 Trying PDF generation at: {url}")
+                    
+                    # Send to backend
+                    response = self.session.post(
+                        url,
+                        json=sanitization_data,
+                        timeout=60  # Increased timeout for PDF generation
+                    )
+                    
+                    print(f"📡 Response status: {response.status_code}")
+                    print(f"📡 Response headers: {dict(response.headers)}")
+                    
+                    if response.status_code == 200:
+                        try:
+                            result = response.json()
+                            pdf_url = result.get('pdf_url') or result.get('url') or result.get('download_url')
+                            
+                            if pdf_url:
+                                print(f"✅ PDF generated successfully: {pdf_url}")
+                                return True, pdf_url, None
+                            else:
+                                print(f"⚠️  Success response but no PDF URL in: {result}")
+                                # Maybe the PDF is returned directly as binary content
+                                if response.headers.get('content-type', '').startswith('application/pdf'):
+                                    print("📄 PDF returned as binary content")
+                                    return True, None, None  # Success but no URL
+                                
+                        except json.JSONDecodeError:
+                            print("⚠️  Response is not JSON, checking if it's PDF binary...")
+                            if response.headers.get('content-type', '').startswith('application/pdf'):
+                                print("📄 PDF returned as binary content")
+                                return True, None, None
+                            
+                    elif response.status_code == 404:
+                        print(f"⚠️  Endpoint not found: {endpoint}")
+                        continue  # Try next endpoint
+                    else:
+                        error_msg = f"Backend returned {response.status_code}: {response.text[:500]}"
+                        print(f"❌ {error_msg}")
+                        # Don't return error yet, try other endpoints
+                        
+                except requests.exceptions.RequestException as e:
+                    print(f"❌ Request failed for {endpoint}: {e}")
+                    continue
+            
+            # If we get here, all endpoints failed
+            error_msg = "All PDF generation endpoints failed"
+            print(f"❌ {error_msg}")
+            return False, None, error_msg
                 
         except Exception as e:
-            error_msg = str(e)
+            error_msg = f"Unexpected error: {str(e)}"
             print(f"❌ Error generating PDF: {error_msg}")
             return False, None, error_msg
     
@@ -132,15 +230,23 @@ class CertificateBackendClient:
             True if successful, False otherwise
         """
         try:
-            response = requests.get(pdf_url, timeout=30)
+            print(f"⬇️  Downloading PDF from: {pdf_url}")
+            
+            # Make sure output directory exists
+            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+            
+            response = self.session.get(pdf_url, timeout=60, stream=True)
             if response.status_code == 200:
                 with open(output_path, 'wb') as f:
-                    f.write(response.content)
+                    for chunk in response.iter_content(chunk_size=8192):
+                        f.write(chunk)
+                        
                 print(f"✅ PDF downloaded to: {output_path}")
                 return True
             else:
-                print(f"❌ Failed to download PDF: {response.status_code}")
+                print(f"❌ Failed to download PDF: {response.status_code} - {response.text[:200]}")
                 return False
+                
         except Exception as e:
             print(f"❌ Error downloading PDF: {e}")
             return False
@@ -170,16 +276,26 @@ class CertificateBackendClient:
         }
         
         # Find all JSON certificate files
-        json_files = [f for f in os.listdir(cert_dir) if f.endswith('.json')]
+        json_files = [f for f in os.listdir(cert_dir) 
+                     if f.endswith('.json') and os.path.isfile(os.path.join(cert_dir, f))]
+        
+        if not json_files:
+            print(f"⚠️  No JSON files found in {cert_dir}")
+            return results
+        
+        print(f"📁 Found {len(json_files)} JSON files to process")
         
         for json_file in json_files:
             json_path = os.path.join(cert_dir, json_file)
-            print(f"\n📄 Processing: {json_file}")
+            print(f"\n{'='*60}")
+            print(f"📄 Processing: {json_file}")
+            print(f"{'='*60}")
             
             success, pdf_url, error = self.generate_pdf_from_json(json_path)
             
             cert_result = {
                 'json_file': json_file,
+                'json_path': json_path,
                 'success': success,
                 'pdf_url': pdf_url,
                 'error': error
@@ -197,13 +313,20 @@ class CertificateBackendClient:
             
             if success:
                 results['successful'] += 1
+                print(f"✅ Success: {json_file}")
             else:
                 results['failed'] += 1
+                print(f"❌ Failed: {json_file} - {error}")
             
             # Small delay to avoid overwhelming the server
-            time.sleep(0.5)
+            time.sleep(1)
         
         return results
+    
+    def __del__(self):
+        """Clean up the session"""
+        if hasattr(self, 'session'):
+            self.session.close()
 
 
 # Standalone script functionality
@@ -218,44 +341,87 @@ if __name__ == "__main__":
                        help='Directory containing JSON certificates')
     parser.add_argument('--output-dir', help='Directory to save PDF files')
     parser.add_argument('--single-file', help='Process a single JSON file')
+    parser.add_argument('--verbose', '-v', action='store_true', 
+                       help='Enable verbose logging')
     
     args = parser.parse_args()
     
     # Initialize client
+    print(f"🚀 Initializing Certificate Backend Client")
+    print(f"Backend URL: {args.backend_url}")
+    if args.auth_token:
+        print(f"Using authentication token: {'*' * (len(args.auth_token)-4)}{args.auth_token[-4:]}")
+    
     client = CertificateBackendClient(args.backend_url, args.auth_token)
     
     # Test connection
-    print(f"🔌 Connecting to backend at {args.backend_url}...")
+    print(f"\n🔌 Testing connection to backend...")
     if not client.test_connection():
-        print("❌ Cannot connect to backend server. Is it running?")
+        print("❌ Cannot connect to backend server.")
+        print("💡 Troubleshooting tips:")
+        print("   - Check if the backend server is running")
+        print("   - Verify the URL is correct")
+        print("   - Check firewall/network settings")
+        print(f"   - Try: curl -I {args.backend_url}")
         exit(1)
     print("✅ Backend connection successful!")
     
     if args.single_file:
         # Process single file
+        print(f"\n📄 Processing single file: {args.single_file}")
+        
+        if not os.path.exists(args.single_file):
+            print(f"❌ File not found: {args.single_file}")
+            exit(1)
+            
         success, pdf_url, error = client.generate_pdf_from_json(args.single_file)
         if success:
-            print(f"✅ PDF URL: {pdf_url}")
-            if args.output_dir:
-                pdf_filename = os.path.basename(args.single_file).replace('.json', '.pdf')
-                pdf_path = os.path.join(args.output_dir, pdf_filename)
-                client.download_pdf(pdf_url, pdf_path)
+            if pdf_url:
+                print(f"✅ PDF URL: {pdf_url}")
+                if args.output_dir:
+                    if not os.path.exists(args.output_dir):
+                        os.makedirs(args.output_dir)
+                    pdf_filename = os.path.basename(args.single_file).replace('.json', '.pdf')
+                    pdf_path = os.path.join(args.output_dir, pdf_filename)
+                    client.download_pdf(pdf_url, pdf_path)
+            else:
+                print("✅ PDF generated successfully (no URL returned)")
         else:
             print(f"❌ Failed: {error}")
+            exit(1)
     else:
         # Batch process directory
         print(f"\n📁 Processing certificates in: {args.cert_dir}")
+        
+        if not os.path.exists(args.cert_dir):
+            print(f"❌ Certificate directory not found: {args.cert_dir}")
+            exit(1)
+            
         results = client.batch_process_certificates(args.cert_dir, args.output_dir)
         
-        print(f"\n{'='*50}")
-        print(f"📊 Processing Complete!")
-        print(f"{'='*50}")
+        if 'error' in results:
+            print(f"❌ Error: {results['error']}")
+            exit(1)
+        
+        print(f"\n{'='*60}")
+        print(f"📊 PROCESSING COMPLETE!")
+        print(f"{'='*60}")
         print(f"Total Processed: {results['processed']}")
         print(f"Successful: {results['successful']}")
         print(f"Failed: {results['failed']}")
+        
+        if results['successful'] > 0:
+            print(f"\n✅ Successful certificates:")
+            for cert in results['certificates']:
+                if cert['success']:
+                    local_path = cert.get('local_pdf_path', 'N/A')
+                    print(f"  - {cert['json_file']} → {local_path}")
         
         if results['failed'] > 0:
             print(f"\n❌ Failed certificates:")
             for cert in results['certificates']:
                 if not cert['success']:
                     print(f"  - {cert['json_file']}: {cert['error']}")
+            exit(1)
+    
+    print(f"\n🎉 All done!")
