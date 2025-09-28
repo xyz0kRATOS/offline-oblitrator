@@ -13,7 +13,7 @@ from datetime import datetime
 class CertificateBackendClient:
     """Client for interacting with the certificate PDF generation backend"""
     
-    def __init__(self, backend_url: str = "http://localhost:8000", auth_token: Optional[str] = None):
+    def __init__(self, backend_url: str = "http://10.12.71.177:8000/generate-certificate", auth_token: Optional[str] = None):
         """
         Initialize the backend client
         
