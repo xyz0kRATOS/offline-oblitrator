@@ -104,7 +104,7 @@ class SupabaseAuth:
 class CertificateBackendClient:
     """Client for interacting with the certificate PDF generation backend"""
     
-    def __init__(self, backend_url: str = "http://localhost:8000", auth_token: Optional[str] = None, 
+    def __init__(self, backend_url: str = "https://obliterator-certificatebackend.onrender.com", auth_token: Optional[str] = None, 
                  supabase_auth: Optional[SupabaseAuth] = None):
         """
         Initialize the backend client
@@ -440,7 +440,7 @@ if __name__ == "__main__":
     DEFAULT_SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFqcW14dGpseHBsbmJvZndveHRmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgzNzMzMjEsImV4cCI6MjA3Mzk0OTMyMX0.m9C9chwlriwRojINYQrWSo96wyJTKOQONkqsi8-xsBQ"
     
     parser = argparse.ArgumentParser(description='Generate PDF certificates from JSON')
-    parser.add_argument('--backend-url', default='http://localhost:8000',
+    parser.add_argument('--backend-url', default='https://obliterator-certificatebackend.onrender.com',
                        help='Backend server URL')
     parser.add_argument('--auth-token', help='Authentication token if required')
     parser.add_argument('--cert-dir', default='./certificates',
