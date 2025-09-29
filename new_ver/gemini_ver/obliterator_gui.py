@@ -756,35 +756,89 @@ class CompletionFrame(customtkinter.CTkFrame):
             placeholder.grid(row=3, column=0, pady=10)
     
     def initialize_backend_client(self):
-        """Initialize the backend client with authentication"""
+        """Initialize the backend client using credentials from login system"""
         try:
-            # Try to authenticate with default credentials
-            supabase_auth = SupabaseAuth(SUPABASE_URL, SUPABASE_KEY)
+            print("\n" + "="*60)
+            print("BACKEND AUTHENTICATION")
+            print("="*60)
             
-            # Try environment variables first
-            email = os.environ.get('OBLITERATOR_EMAIL', 'admin@obliterator.local')
-            password = os.environ.get('OBLITERATOR_PASSWORD', 'ObliteratorAdmin2024')
+            # Read session data from login system
+            session_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "obliterator_login", ".session_data")
             
-            success, error = supabase_auth.sign_in_with_password(email, password)
+            if not os.path.exists(session_file):
+                print(f"⚠️ No session file found at: {session_file}")
+                print("⚠️ Running in JSON-only mode (no PDFs)")
+                self.backend_client = None
+                print("="*60 + "\n")
+                return
             
-            if success:
-                self.backend_client = CertificateBackendClient(
-                    backend_url="https://obliterator-certificatebackend.onrender.com",
-                    supabase_auth=supabase_auth
-                )
+            # Load and decode session
+            try:
+                import base64
+                with open(session_file, 'r') as f:
+                    encrypted_data = f.read()
                 
+                decrypted_data = base64.b64decode(encrypted_data.encode()).decode()
+                session_data = json.loads(decrypted_data)
+                
+                user_info = session_data.get('user', {})
+                email = user_info.get('email')
+                
+                print(f"📧 Found authenticated user: {email}")
+                
+                # Check if we have table_auth (custom Users table auth)
+                if user_info.get('table_auth'):
+                    print("🔐 Using custom table authentication")
+                    # For table auth, we create a simple token
+                    auth_token = f"table_auth_{user_info.get('id')}"
+                    
+                    self.backend_client = CertificateBackendClient(
+                        backend_url="https://obliterator-certificatebackend.onrender.com",
+                        auth_token=auth_token,
+                        supabase_auth=None
+                    )
+                else:
+                    # Standard Supabase auth - need to re-authenticate to get fresh token
+                    print("🔐 Re-authenticating with Supabase for fresh token...")
+                    supabase_auth = SupabaseAuth(SUPABASE_URL, SUPABASE_KEY)
+                    
+                    # We don't have the password, but we have the email
+                    # Try to use the stored access token if available
+                    if 'access_token' in session_data:
+                        supabase_auth.auth_token = session_data['access_token']
+                        supabase_auth.user_info = user_info
+                        print("✅ Using stored access token")
+                    else:
+                        print("⚠️ No stored token - backend may not work")
+                        self.backend_client = None
+                        print("="*60 + "\n")
+                        return
+                    
+                    self.backend_client = CertificateBackendClient(
+                        backend_url="https://obliterator-certificatebackend.onrender.com",
+                        supabase_auth=supabase_auth
+                    )
+                
+                # Test connection
+                print(f"Testing backend connection...")
                 if self.backend_client.test_connection():
                     print("✅ Backend connected - PDF generation available")
                 else:
                     print("⚠️ Backend offline - JSON only mode")
                     self.backend_client = None
-            else:
-                print(f"⚠️ Backend auth failed - JSON only mode: {error}")
+                    
+            except Exception as e:
+                print(f"⚠️ Error reading session: {e}")
+                print("⚠️ Running in JSON-only mode (no PDFs)")
                 self.backend_client = None
                 
         except Exception as e:
-            print(f"⚠️ Backend initialization error: {e}")
+            print(f"❌ Backend initialization error: {e}")
+            import traceback
+            traceback.print_exc()
             self.backend_client = None
+        
+        print("="*60 + "\n")
     
     def update_completion_info(self, wiped_devices):
         self.wiped_devices = wiped_devices
