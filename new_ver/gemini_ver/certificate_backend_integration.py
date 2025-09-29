@@ -171,17 +171,20 @@ class CertificateBackendClient:
     # Replace the existing method in certificate_backend_integration.py with this one
     
     def convert_obliterator_to_sanitization_format(self, obliterator_json: Dict) -> Dict:
-        """
-        Convert Obliterator JSON format to the backend's expected format with ALL fields
+            """
+        Pass through the Obliterator JSON format directly - it's already in the correct format!
         """
         try:
             # Extract the certificate payload if it's wrapped
             if 'certificate_payload' in obliterator_json:
-                cert_data = obliterator_json['certificate_payload']
-                signature_data = obliterator_json.get('signature', {})
+                return obliterator_json['certificate_payload']
             else:
-                cert_data = obliterator_json
-                signature_data = {}
+                # It's already in the correct format
+                return obliterator_json
+                
+        except Exception as e:
+            print(f"❌ Error processing JSON: {e}")
+            raise
             
             # Extract all sections
             metadata = cert_data.get('certificate_metadata', {})
