@@ -769,7 +769,7 @@ class CompletionFrame(customtkinter.CTkFrame):
             
             if success:
                 self.backend_client = CertificateBackendClient(
-                    backend_url="http://localhost:8000",
+                    backend_url="https://obliterator-certificatebackend.onrender.com",
                     supabase_auth=supabase_auth
                 )
                 
