@@ -202,8 +202,62 @@ if [ "$SERIAL_NUMBER" == "UNKNOWN_SERIAL" ] || [ -z "$SERIAL_NUMBER" ]; then
   fi
 fi
 
-# --- Create Certificate Payload ---
-create_certificate_payload() {
+# --- Generate Passes JSON Array ---
+generate_passes_json() {
+  local passes_json="["
+  local pass_count="${PASSES_PERFORMED:-5}"
+  
+  if [ "$pass_count" -eq 5 ]; then
+    # Standard 5-pass pattern
+    passes_json+='{"pass_number":1,"pattern_type":"Random","pattern_description":"Cryptographically secure random data","timestamp":"'$TIMESTAMP'"},'
+    passes_json+='{"pass_number":2,"pattern_type":"Fixed","pattern_description":"0x55 (01010101 binary pattern)","timestamp":"'$TIMESTAMP'"},'
+    passes_json+='{"pass_number":3,"pattern_type":"Fixed","pattern_description":"0xAA (10101010 binary pattern)","timestamp":"'$TIMESTAMP'"},'
+    passes_json+='{"pass_number":4,"pattern_type":"Random","pattern_description":"Cryptographically secure random data","timestamp":"'$TIMESTAMP'"},'
+    passes_json+='{"pass_number":5,"pattern_type":"Zeros","pattern_description":"0x00 (all zeros - final pass)","timestamp":"'$TIMESTAMP'"}'
+  else
+    # Generic pass description for other patterns
+    for i in $(seq 1 $pass_count); do
+      [ $i -gt 1 ] && passes_json+=","
+      passes_json+='{"pass_number":'$i',"pattern_type":"Pattern","pattern_description":"Pass '$i' of '$pass_count'","timestamp":"'$TIMESTAMP'"}'
+    done
+  fi
+  
+  passes_json+="]"
+  echo "$passes_json"
+}
+
+# --- Get Risk Assessment Based on Media Type ---
+get_risk_assessment() {
+  case "$DEVICE_TYPE" in
+    "SSD"|"NVMe")
+      echo "Medium - Flash media with wear leveling may retain data in unmapped blocks"
+      ;;
+    "HDD")
+      echo "Low - Magnetic media overwrite is effective for data sanitization"
+      ;;
+    *)
+      echo "Medium - Risk level depends on underlying storage technology"
+      ;;
+  esac
+}
+
+# --- Get Follow-up Recommendations ---
+get_follow_up_recommendation() {
+  case "$DEVICE_TYPE" in
+    "SSD"|"NVMe")
+      echo "Consider physical destruction or cryptographic erasure for high-security applications"
+      ;;
+    "HDD")
+      echo "Physical destruction recommended for classified data environments"
+      ;;
+    *)
+      echo "Verify sanitization effectiveness based on data sensitivity requirements"
+      ;;
+  esac
+}
+
+# --- Create Certificate (FLAT STRUCTURE - NO certificate_payload wrapper) ---
+create_flat_certificate() {
 cat << EOF
 {
   "certificate_metadata": {
@@ -269,91 +323,35 @@ cat << EOF
     "sanitization_method": "$SANITIZATION_METHOD",
     "residual_risk_assessment": "$(get_risk_assessment)",
     "recommended_follow_up": "$(get_follow_up_recommendation)"
-  }
-}
-EOF
-}
-
-# --- Generate Passes JSON Array ---
-generate_passes_json() {
-  local passes_json="["
-  local pass_count="${PASSES_PERFORMED:-5}"
-  
-  if [ "$pass_count" -eq 5 ]; then
-    # Standard 5-pass pattern
-    passes_json+='{"pass_number":1,"pattern_type":"Random","pattern_description":"Cryptographically secure random data","timestamp":"'$TIMESTAMP'"},'
-    passes_json+='{"pass_number":2,"pattern_type":"Fixed","pattern_description":"0x55 (01010101 binary pattern)","timestamp":"'$TIMESTAMP'"},'
-    passes_json+='{"pass_number":3,"pattern_type":"Fixed","pattern_description":"0xAA (10101010 binary pattern)","timestamp":"'$TIMESTAMP'"},'
-    passes_json+='{"pass_number":4,"pattern_type":"Random","pattern_description":"Cryptographically secure random data","timestamp":"'$TIMESTAMP'"},'
-    passes_json+='{"pass_number":5,"pattern_type":"Zeros","pattern_description":"0x00 (all zeros - final pass)","timestamp":"'$TIMESTAMP'"}'
-  else
-    # Generic pass description for other patterns
-    for i in $(seq 1 $pass_count); do
-      [ $i -gt 1 ] && passes_json+=","
-      passes_json+='{"pass_number":'$i',"pattern_type":"Pattern","pattern_description":"Pass '$i' of '$pass_count'","timestamp":"'$TIMESTAMP'"}'
-    done
-  fi
-  
-  passes_json+="]"
-  echo "$passes_json"
-}
-
-# --- Get Risk Assessment Based on Media Type ---
-get_risk_assessment() {
-  case "$DEVICE_TYPE" in
-    "SSD"|"NVMe")
-      echo "Medium - Flash media with wear leveling may retain data in unmapped blocks"
-      ;;
-    "HDD")
-      echo "Low - Magnetic media overwrite is effective for data sanitization"
-      ;;
-    *)
-      echo "Medium - Risk level depends on underlying storage technology"
-      ;;
-  esac
-}
-
-# --- Get Follow-up Recommendations ---
-get_follow_up_recommendation() {
-  case "$DEVICE_TYPE" in
-    "SSD"|"NVMe")
-      echo "Consider physical destruction or cryptographic erasure for high-security applications"
-      ;;
-    "HDD")
-      echo "Physical destruction recommended for classified data environments"
-      ;;
-    *)
-      echo "Verify sanitization effectiveness based on data sensitivity requirements"
-      ;;
-  esac
-}
-
-# --- Generate and Sign Certificate ---
-echo "Generating certificate payload..."
-CERT_PAYLOAD=$(create_certificate_payload)
-
-echo "Validating JSON structure..."
-echo "$CERT_PAYLOAD" | jq . > /dev/null || {
-  echo "ERROR: Generated JSON is invalid!" >&2
-  exit 1
-}
-
-echo "Signing certificate with private key..."
-SIGNATURE=$(echo -n "$CERT_PAYLOAD" | openssl dgst -sha256 -sign "$PRIVATE_KEY_PATH" | base64 -w 0)
-
-# Create final signed certificate
-SIGNED_CERT=$(cat << EOF
-{
-  "certificate_payload": $CERT_PAYLOAD,
+  },
   "signature": {
     "algorithm": "RSA-SHA256",
     "format": "PKCS#1 v1.5",
-    "value": "$SIGNATURE",
+    "value": "SIGNATURE_PLACEHOLDER",
     "signed_timestamp": "$TIMESTAMP"
   }
 }
 EOF
-)
+}
+
+# --- Generate and Sign Certificate ---
+echo "Generating certificate..."
+CERT_TEMPLATE=$(create_flat_certificate)
+
+echo "Validating JSON structure..."
+echo "$CERT_TEMPLATE" | jq . > /dev/null || {
+  echo "ERROR: Generated JSON is invalid!" >&2
+  exit 1
+}
+
+# Create payload for signing (everything except the signature field itself)
+PAYLOAD_TO_SIGN=$(echo "$CERT_TEMPLATE" | jq 'del(.signature)')
+
+echo "Signing certificate with private key..."
+SIGNATURE=$(echo -n "$PAYLOAD_TO_SIGN" | openssl dgst -sha256 -sign "$PRIVATE_KEY_PATH" | base64 -w 0)
+
+# Insert the actual signature into the template
+SIGNED_CERT=$(echo "$CERT_TEMPLATE" | jq --arg sig "$SIGNATURE" '.signature.value = $sig')
 
 # --- Save Certificate ---
 CERT_FILENAME="wipe-${FILE_TIMESTAMP}-${SERIAL_NUMBER}.json"
@@ -367,7 +365,7 @@ if [ -f "$CERT_FILEPATH" ] && jq . "$CERT_FILEPATH" >/dev/null 2>&1; then
   echo "File: $CERT_FILEPATH"
   echo "Device: $DEVICE_PATH ($MODEL)"
   echo "Serial: $SERIAL_NUMBER"
-  echo "Certificate ID: $(jq -r '.certificate_payload.certificate_metadata.certificate_id' "$CERT_FILEPATH")"
+  echo "Certificate ID: $(jq -r '.certificate_metadata.certificate_id' "$CERT_FILEPATH")"
 else
   echo "ERROR: Failed to create certificate file!" >&2
   exit 1
