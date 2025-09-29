@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 # certificate_viewer_addon.py
-# Add-on module to integrate into the CompletionFrame class of the main GUI
-# This adds view/download capabilities for JSON and PDF certificates
+# Updated to handle flat JSON structure (no certificate_payload wrapper)
 
 import tkinter as tk
 import customtkinter
@@ -246,14 +245,16 @@ class CertificateViewerFrame(customtkinter.CTkFrame):
             self.status_label.configure(text=f"Error loading certificate: {str(e)}")
     
     def display_certificate(self, cert_data):
-        """Display certificate details in viewer"""
+        """Display certificate details in viewer - handles both flat and wrapped formats"""
         self.cert_viewer.configure(state="normal")
         self.cert_viewer.delete("1.0", "end")
         
-        # Extract key information
+        # Handle both old (wrapped) and new (flat) formats
         if 'certificate_payload' in cert_data:
+            # Old format with wrapper
             payload = cert_data['certificate_payload']
         else:
+            # New flat format
             payload = cert_data
         
         metadata = payload.get('certificate_metadata', {})
@@ -282,10 +283,11 @@ class CertificateViewerFrame(customtkinter.CTkFrame):
         display_text += f"  Technique: {tool_info.get('technique', 'N/A')}\n"
         display_text += f"  Status: {event_info.get('status', 'N/A')}\n\n"
         
-        if 'signature' in cert_data:
+        if 'signature' in cert_data or 'signature' in payload:
+            sig_data = cert_data.get('signature', payload.get('signature', {}))
             display_text += "Digital Signature:\n"
-            display_text += f"  Algorithm: {cert_data['signature'].get('algorithm', 'N/A')}\n"
-            display_text += f"  Signature: {cert_data['signature'].get('value', '')[:50]}...\n"
+            display_text += f"  Algorithm: {sig_data.get('algorithm', 'N/A')}\n"
+            display_text += f"  Signature: {sig_data.get('value', '')[:50]}...\n"
         
         self.cert_viewer.insert("1.0", display_text)
         self.cert_viewer.configure(state="disabled")
@@ -414,36 +416,3 @@ class CertificateViewerFrame(customtkinter.CTkFrame):
                 f"Generated {results['successful']} PDFs.\n"
                 f"{results['failed']} failed:\n{failed_list[:200]}"
             )
-
-
-# Integration function to add to existing CompletionFrame
-def integrate_certificate_viewer(completion_frame):
-    """
-    Function to integrate certificate viewer into existing CompletionFrame
-    Call this from your main GUI to add the certificate viewer
-    """
-    # Add a new tab or section for certificate management
-    cert_viewer = CertificateViewerFrame(
-        completion_frame,
-        cert_dir=completion_frame.controller.frames[MainFrame].CERT_DIR
-    )
-    cert_viewer.pack(fill="both", expand=True, padx=10, pady=10)
-    
-    return cert_viewer
-
-# Example of how to modify the CompletionFrame in your main GUI:
-"""
-# In your CompletionFrame class, add this method:
-def add_certificate_viewer(self):
-    # Create a separate frame for the certificate viewer
-    viewer_container = customtkinter.CTkFrame(self)
-    viewer_container.grid(row=3, column=0, padx=20, pady=10, sticky="nsew")
-    self.grid_rowconfigure(3, weight=1)
-    
-    # Add the certificate viewer
-    from certificate_viewer_addon import CertificateViewerFrame
-    self.cert_viewer = CertificateViewerFrame(viewer_container, cert_dir=CERT_DIR)
-    self.cert_viewer.pack(fill="both", expand=True)
-
-# Call this method in CompletionFrame.__init__ or when needed
-"""
