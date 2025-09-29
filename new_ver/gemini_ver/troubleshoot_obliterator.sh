@@ -16,12 +16,12 @@ ISSUES_FOUND=0
 # --- Check Script Files ---
 echo "1. Checking for required script files..."
 REQUIRED_SCRIPTS=(
-    "wipe_disk_enhanced.sh"
+    "wipe_disk.sh"
     "detect_devices.sh" 
     "generate_certificate.sh"
     "verify_certificate.sh"
     "test_certificate.sh"
-    "obliterator_gui_fixed.py"
+    "obliterator_gui.py"
 )
 
 for script in "${REQUIRED_SCRIPTS[@]}"; do
