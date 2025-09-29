@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-# obliterator_gui_fixed.py - (Version 12.2 - Fixed Error Handling)
+# obliterator_gui_integrated.py - (Version 12.3 - Integrated Backend & Viewer)
 # GUI for the Obliterator Secure Wipe Tool
-# Fixed device detection and progress monitoring issues
+# Integrated certificate backend and viewer functionality
 
 import tkinter
 import customtkinter
@@ -17,6 +17,22 @@ from queue import Queue, Empty
 # --- Pillow library for image support ---
 from PIL import Image, ImageTk
 
+# --- Backend Integration ---
+try:
+    from certificate_backend_integration import CertificateBackendClient, SupabaseAuth
+    HAS_BACKEND_INTEGRATION = True
+except ImportError:
+    HAS_BACKEND_INTEGRATION = False
+    print("⚠️  Backend integration module not available - PDF generation disabled")
+
+# --- Certificate Viewer ---
+try:
+    from certificate_viewer_addon import CertificateViewerFrame
+    HAS_CERT_VIEWER = True
+except ImportError:
+    HAS_CERT_VIEWER = False
+    print("⚠️  Certificate viewer module not available - viewer disabled")
+
 # --- AUTHENTICATION INTEGRATION ---
 def check_authentication():
     """Check if user is authenticated by running login system"""
@@ -26,7 +42,6 @@ def check_authentication():
     if os.path.exists(login_script):
         print("Authentication required. Launching login system...")
         try:
-            # Run login system
             result = subprocess.run([sys.executable, login_script], 
                                   cwd=login_dir, 
                                   capture_output=False)
@@ -46,7 +61,7 @@ def check_authentication():
 
 # --- Configuration ---
 APP_NAME = "OBLITERATOR"
-APP_VERSION = "12.2-fixed"
+APP_VERSION = "12.3-integrated"
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 THEME_FILE = os.path.join(SCRIPT_DIR, "purple_theme.json")
 LOGO_FILE = os.path.join(SCRIPT_DIR, "logo.png") 
@@ -54,6 +69,10 @@ CERT_DIR = os.path.join(SCRIPT_DIR, "certificates/")
 WIPE_SCRIPT_PATH = os.path.join(SCRIPT_DIR, "wipe_disk.sh")
 DEVICE_DETECTION_SCRIPT = os.path.join(SCRIPT_DIR, "detect_devices.sh")
 CERT_GENERATOR_PATH = os.path.join(SCRIPT_DIR, "generate_certificate.sh")
+
+# --- Supabase Configuration (for backend) ---
+SUPABASE_URL = "https://ajqmxtjlxplnbofwoxtf.supabase.co"
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFqcW14dGpseHBsbmJvZndveHRmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgzNzMzMjEsImV4cCI6MjA3Mzk0OTMyMX0.m9C9chwlriwRojINYQrWSo96wyJTKOQONkqsi8-xsBQ"
 
 # --- Font Definitions ---
 FONT_HEADER = ("Roboto", 42, "bold")
@@ -145,12 +164,11 @@ class MainFrame(customtkinter.CTkFrame):
         self.controller = controller
         self.device_checkboxes = {}
 
-        # --- Layout Structure ---
         self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(0, weight=0)  # Header
-        self.grid_rowconfigure(1, weight=1)  # Drive Selection
-        self.grid_rowconfigure(2, weight=2)  # Details Boxes
-        self.grid_rowconfigure(3, weight=0)  # Footer
+        self.grid_rowconfigure(0, weight=0)
+        self.grid_rowconfigure(1, weight=1)
+        self.grid_rowconfigure(2, weight=2)
+        self.grid_rowconfigure(3, weight=0)
         
         # --- Header ---
         header_frame = customtkinter.CTkFrame(self, fg_color="transparent")
@@ -197,7 +215,7 @@ class MainFrame(customtkinter.CTkFrame):
         footer_frame = customtkinter.CTkFrame(self, fg_color="transparent")
         footer_frame.grid(row=3, column=0, pady=20, padx=20, sticky="e")
         self.wipe_button = customtkinter.CTkButton(footer_frame, text="Proceed to Final Confirmation...", font=FONT_BODY, state="disabled", 
-                                                 fg_color="#8B0000", hover_color="#A52A2A", # Maroon Colors
+                                                 fg_color="#8B0000", hover_color="#A52A2A",
                                                  command=self.confirm_wipe)
         self.wipe_button.pack()
     
@@ -231,11 +249,9 @@ class MainFrame(customtkinter.CTkFrame):
         """Get detailed drive information with proper error handling"""
         print(f"Getting drive details for {dev_path}")
         
-        # Check if enhanced detection script exists and is executable
         if os.path.exists(DEVICE_DETECTION_SCRIPT) and os.access(DEVICE_DETECTION_SCRIPT, os.X_OK):
             try:
                 print(f"Trying enhanced detection for {dev_path}")
-                # Use the enhanced device detection script
                 result = subprocess.run([
                     'bash', DEVICE_DETECTION_SCRIPT, 
                     '--json', '--device', dev_path
@@ -273,7 +289,6 @@ class MainFrame(customtkinter.CTkFrame):
         else:
             print(f"Enhanced detection script not found or not executable: {DEVICE_DETECTION_SCRIPT}")
             
-        # Fallback to basic smartctl detection
         print(f"Falling back to basic detection for {dev_path}")
         try:
             result = subprocess.run(['smartctl', '-i', '--json', dev_path], 
@@ -368,7 +383,6 @@ class MainFrame(customtkinter.CTkFrame):
                 plan_text += f"  Est. Time:       {estimated_time} minutes\n"
                 plan_text += f"  SMART Health:    {scraped.get('smart_health', 'unknown')}\n"
                 
-                # Show security features
                 security_info = []
                 if scraped.get('has_hpa'):
                     security_info.append("HPA detected")
@@ -383,7 +397,6 @@ class MainFrame(customtkinter.CTkFrame):
                 
                 plan_text += "\n"
             
-            # Add summary
             plan_text += ("-"*50) + "\n"
             plan_text += f"Total Devices:     {len(selected_devs)}\n"
             plan_text += f"Total Est. Time:   {total_estimated_time} minutes ({total_estimated_time//60}h {total_estimated_time%60}m)\n"
@@ -412,7 +425,7 @@ class ConfirmationFrame(customtkinter.CTkFrame):
         button_frame = customtkinter.CTkFrame(self, fg_color="transparent")
         button_frame.pack(pady=40)
         self.confirm_button = customtkinter.CTkButton(button_frame, text="Confirm and Wipe", font=FONT_BODY, state="disabled",
-                                                      fg_color="#8B0000", hover_color="#A52A2A", # Maroon Colors
+                                                      fg_color="#8B0000", hover_color="#A52A2A",
                                                       command=self.controller.execute_wipe)
         self.confirm_button.pack(side="left", padx=10)
         cancel_button = customtkinter.CTkButton(button_frame, text="Cancel", font=FONT_BODY, 
@@ -439,7 +452,7 @@ class WipeProgressFrame(customtkinter.CTkFrame):
         self.process, self.start_time = None, 0
         self.device_queue, self.current_device_index, self.total_devices = [], 0, 0
         self.current_device_total_size = 0
-        self.wiped_devices = []  # Track successfully wiped devices
+        self.wiped_devices = []
         
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(0, weight=1)
@@ -477,7 +490,7 @@ class WipeProgressFrame(customtkinter.CTkFrame):
     def start_wipe_queue(self, devices):
         self.device_queue = list(devices)
         self.current_device_index, self.total_devices = 0, len(devices)
-        self.wiped_devices = []  # Reset wiped devices list
+        self.wiped_devices = []
         self.log_textbox.configure(state="normal")
         self.log_textbox.delete("1.0", "end")
         self.log_textbox.configure(state="disabled")
@@ -487,7 +500,6 @@ class WipeProgressFrame(customtkinter.CTkFrame):
         if not self.device_queue:
             self.overall_title_label.configure(text="All Wipes Complete!")
             self.log("✅ All selected drives have been processed.")
-            # Show completion screen
             self.controller.show_completion(self.wiped_devices)
             return
             
@@ -507,12 +519,10 @@ class WipeProgressFrame(customtkinter.CTkFrame):
         self.after(1000, self.update_timer)
         device_path = f"/dev/{device_data['name']}"
         
-        # Check which wipe script to use
         if os.path.exists(WIPE_SCRIPT_PATH) and os.access(WIPE_SCRIPT_PATH, os.X_OK):
             command = ['bash', WIPE_SCRIPT_PATH, device_path, 'OBLITERATE']
             self.log(f"Using enhanced wipe script: {WIPE_SCRIPT_PATH}")
         else:
-            # Fallback to basic wipe script if enhanced version not available
             basic_wipe_script = os.path.join(SCRIPT_DIR, "wipe_disk.sh")
             if os.path.exists(basic_wipe_script) and os.access(basic_wipe_script, os.X_OK):
                 command = ['bash', basic_wipe_script, device_path, 'OBLITERATE']
@@ -547,7 +557,6 @@ class WipeProgressFrame(customtkinter.CTkFrame):
                 if line:
                     self.log(f"OUT: {line}")
                     
-                    # Handle enhanced script output formats
                     if line.startswith("PROGRESS:"):
                         self.update_progress_from_line(line)
                     elif line.startswith("DEVICE_TYPE:"):
@@ -579,12 +588,9 @@ class WipeProgressFrame(customtkinter.CTkFrame):
             while True:
                 line = q_err.get_nowait().strip()
                 if line:
-                    # Handle different types of stderr output
                     if "[INFO]" in line or "[WARN]" in line or "[ERROR]" in line:
-                        # Enhanced script logging
                         self.log(f"LOG: {line}")
                     elif "MiB/s" in line or "GiB/s" in line:
-                        # pv progress output
                         parts = line.split()
                         try:
                             if len(parts) >= 2:
@@ -601,11 +607,9 @@ class WipeProgressFrame(customtkinter.CTkFrame):
                                 
                                 self.data_label.configure(
                                     text=f"Wiped: {self.bytes_to_gib_str(wiped_bytes)} / {self.bytes_to_gib_str(self.current_device_total_size)}")
-                                self.speed_label.configure(text=f"Speed: {speed}")
                         except (IndexError, ValueError, AttributeError): 
                             pass
                     elif "%" in line and ("ETA" in line or "elapsed" in line):
-                        # pv percentage and time estimates
                         self.log(f"PROGRESS: {line}")
                     else: 
                         self.log(f"ERR: {line}")
@@ -641,7 +645,6 @@ class WipeProgressFrame(customtkinter.CTkFrame):
         if success:
             self.progress_label.configure(text="Status: Wipe and Verification Complete!")
             self.log(f"✅ WIPE SUCCESSFUL for /dev/{device_data['name']}")
-            # Add to successfully wiped devices
             scraped_info = self.controller.frames[MainFrame].get_drive_details(f"/dev/{device_data['name']}")
             device_info = {
                 'name': device_data['name'],
@@ -662,16 +665,22 @@ class WipeProgressFrame(customtkinter.CTkFrame):
             self.time_label.configure(text=f"Elapsed: {str(datetime.timedelta(seconds=int(elapsed)))}")
             self.after(1000, self.update_timer)
 
-# --- Completion Frame (Certificate generation happens here) ---
+# --- Completion Frame (WITH INTEGRATED CERTIFICATE VIEWER) ---
 class CompletionFrame(customtkinter.CTkFrame):
     def __init__(self, parent, controller):
         super().__init__(parent)
         self.controller = controller
         self.wiped_devices = []
+        self.backend_client = None
         
-        # Main layout
+        # Initialize backend client if available
+        if HAS_BACKEND_INTEGRATION:
+            self.initialize_backend_client()
+        
+        # Setup UI
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
+        self.grid_rowconfigure(3, weight=2)  # For certificate viewer
         
         # Header
         header_frame = customtkinter.CTkFrame(self, fg_color="transparent")
@@ -687,16 +696,14 @@ class CompletionFrame(customtkinter.CTkFrame):
         content_frame.grid_columnconfigure(0, weight=1)
         content_frame.grid_rowconfigure(1, weight=1)
         
-        # Summary label
         self.summary_label = customtkinter.CTkLabel(content_frame, text="", font=FONT_BODY_BOLD)
         self.summary_label.grid(row=0, column=0, pady=10, sticky="ew")
         
-        # Certificate status area
         self.cert_textbox = CustomTextbox(content_frame, state="disabled", font=FONT_MONO, 
                                          scrollbar_button_color="#FFD700")
         self.cert_textbox.grid(row=1, column=0, padx=20, pady=10, sticky="nsew")
         
-        # Footer buttons
+        # Action buttons
         footer_frame = customtkinter.CTkFrame(self, fg_color="transparent")
         footer_frame.grid(row=2, column=0, pady=20)
         
@@ -709,14 +716,60 @@ class CompletionFrame(customtkinter.CTkFrame):
                                                     font=FONT_BODY, command=lambda: controller.show_frame(MainFrame))
         self.return_button.pack(side="right", padx=10)
         
+        # --- INTEGRATED CERTIFICATE VIEWER ---
+        if HAS_CERT_VIEWER:
+            viewer_container = customtkinter.CTkFrame(self)
+            viewer_container.grid(row=3, column=0, padx=20, pady=10, sticky="nsew")
+            
+            self.cert_viewer = CertificateViewerFrame(viewer_container, cert_dir=CERT_DIR)
+            self.cert_viewer.pack(fill="both", expand=True)
+        else:
+            # Placeholder if viewer not available
+            placeholder = customtkinter.CTkLabel(
+                self, 
+                text="Certificate viewer module not available",
+                font=FONT_BODY,
+                text_color="gray"
+            )
+            placeholder.grid(row=3, column=0, pady=10)
+    
+    def initialize_backend_client(self):
+        """Initialize the backend client with authentication"""
+        try:
+            # Try to authenticate with default credentials
+            supabase_auth = SupabaseAuth(SUPABASE_URL, SUPABASE_KEY)
+            
+            # Try environment variables first
+            email = os.environ.get('OBLITERATOR_EMAIL', 'admin@obliterator.local')
+            password = os.environ.get('OBLITERATOR_PASSWORD', 'ObliteratorAdmin2024')
+            
+            success, error = supabase_auth.sign_in_with_password(email, password)
+            
+            if success:
+                self.backend_client = CertificateBackendClient(
+                    backend_url="http://localhost:8000",
+                    supabase_auth=supabase_auth
+                )
+                
+                if self.backend_client.test_connection():
+                    print("✅ Backend connected - PDF generation available")
+                else:
+                    print("⚠️ Backend offline - JSON only mode")
+                    self.backend_client = None
+            else:
+                print(f"⚠️ Backend auth failed - JSON only mode: {error}")
+                self.backend_client = None
+                
+        except Exception as e:
+            print(f"⚠️ Backend initialization error: {e}")
+            self.backend_client = None
+    
     def update_completion_info(self, wiped_devices):
         self.wiped_devices = wiped_devices
         
-        # Update summary
         summary_text = f"Successfully wiped {len(wiped_devices)} device(s)"
         self.summary_label.configure(text=summary_text)
         
-        # Update device list
         self.cert_textbox.configure(state="normal")
         self.cert_textbox.delete("1.0", "end")
         
@@ -727,87 +780,59 @@ class CompletionFrame(customtkinter.CTkFrame):
         
         devices_text += ("\nNext Steps:\n" + ("-" * 20) + "\n" +
                         "1. Click 'Generate Certificates' to create signed wipe certificates\n" +
-                        "2. Certificates will be saved to the certificates/ directory\n" +
-                        "3. Each device will get its own JSON certificate file\n")
+                        "2. Certificates will be saved to the certificates/ directory\n")
+        
+        if self.backend_client:
+            devices_text += "3. PDFs will be automatically generated (Backend connected)\n"
+        else:
+            devices_text += "3. PDFs unavailable (Backend offline - JSON only)\n"
         
         self.cert_textbox.insert("1.0", devices_text)
         self.cert_textbox.configure(state="disabled")
         
+        # Refresh certificate viewer if available
+        if HAS_CERT_VIEWER and hasattr(self, 'cert_viewer'):
+            self.cert_viewer.refresh_certificate_list()
+    
     def generate_certificates(self):
-        """Generate certificates for all wiped devices using external script"""
+        """Generate certificates for all wiped devices"""
         self.generate_certs_button.configure(state="disabled", text="Generating...")
         
         self.cert_textbox.configure(state="normal")
         self.cert_textbox.insert("end", "\n" + ("=" * 50) + "\nGenerating Certificates...\n" + ("=" * 50) + "\n")
         self.cert_textbox.configure(state="disabled")
         
-        # Generate certificates in a separate thread
         threading.Thread(target=self.run_certificate_generation, daemon=True).start()
-        
-    # Modified run_certificate_generation method for CompletionFrame class
-    # Replace the existing run_certificate_generation method with this one
     
     def run_certificate_generation(self):
         """Run certificate generation for each device"""
         success_count = 0
         pdf_success_count = 0
         total_devices = len(self.wiped_devices)
-        generated_json_files = []  # Track generated JSON files
         
-        # Initialize backend client if available
-        backend_client = None
-        try:
-            from certificate_backend_integration import CertificateBackendClient, SupabaseAuth
-            
-            # Use your Supabase credentials
-            SUPABASE_URL = "https://ajqmxtjlxplnbofwoxtf.supabase.co"
-            SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFqcW14dGpseHBsbmJvZndveHRmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgzNzMzMjEsImV4cCI6MjA3Mzk0OTMyMX0.m9C9chwlriwRojINYQrWSo96wyJTKOQONkqsi8-xsBQ"
-            
-            # Try to authenticate (you may want to store credentials securely)
-            # For now, using environment variables or hardcoded test credentials
-            supabase_auth = SupabaseAuth(SUPABASE_URL, SUPABASE_KEY)
-            # You may want to prompt for credentials or use saved ones
-            success, error = supabase_auth.sign_in_with_password("admin@obliterator.local", "ObliteratorAdmin2024")
-            
-            if success:
-                backend_client = CertificateBackendClient("http://localhost:8000", supabase_auth=supabase_auth)
-                if backend_client.test_connection():
-                    self.after(0, lambda: self.update_cert_status("✅ Backend connected - PDFs will be generated"))
-                else:
-                    backend_client = None
-                    self.after(0, lambda: self.update_cert_status("⚠️ Backend offline - JSON only mode"))
-            else:
-                self.after(0, lambda: self.update_cert_status(f"⚠️ Backend auth failed - JSON only mode"))
-        except ImportError:
-            self.after(0, lambda: self.update_cert_status("⚠️ Backend module not found - JSON only mode"))
-        except Exception as e:
-            self.after(0, lambda: self.update_cert_status(f"⚠️ Backend error: {str(e)[:50]}"))
-        
-        # Generate certificates for each device
         for i, device in enumerate(self.wiped_devices, 1):
             device_path = f"/dev/{device['name']}"
             serial_number = device['serial_number']
             
-            # Update UI
             self.after(0, lambda d=device['name'], i=i, t=total_devices: self.update_cert_status(
                 f"Generating certificate {i}/{t} for /dev/{d}..."))
             
             try:
-                # STEP 1: Generate JSON certificate using shell script (existing functionality)
+                # Generate JSON certificate
                 if os.path.exists(CERT_GENERATOR_PATH) and os.access(CERT_GENERATOR_PATH, os.X_OK):
                     result = subprocess.run([
                         'bash', CERT_GENERATOR_PATH, 
                         device_path, 
                         serial_number, 
                         'Success',
-                        APP_NAME,  # Tool name
-                        APP_VERSION  # Tool version
+                        APP_NAME,
+                        APP_VERSION
                     ], capture_output=True, text=True, timeout=30)
                     
                     if result.returncode == 0:
                         success_count += 1
                         
-                        # Extract the generated JSON filename from script output
+                        # Extract JSON filepath
                         output_lines = result.stdout.split('\n')
                         json_filepath = None
                         for line in output_lines:
@@ -816,46 +841,42 @@ class CompletionFrame(customtkinter.CTkFrame):
                                 break
                         
                         if not json_filepath:
-                            # Try to construct the expected filename
                             timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
                             json_filename = f"wipe-{timestamp}-{serial_number}.json"
                             json_filepath = os.path.join(CERT_DIR, json_filename)
                         
                         if os.path.exists(json_filepath):
-                            generated_json_files.append(json_filepath)
                             self.after(0, lambda d=device['name']: self.update_cert_status(
                                 f"✅ JSON certificate generated for /dev/{d}"))
                             
-                            # STEP 2: Send to backend for PDF generation if available
-                            if backend_client:
+                            # Try PDF generation if backend available
+                            if self.backend_client:
                                 self.after(0, lambda d=device['name']: self.update_cert_status(
                                     f"📤 Sending /dev/{d} certificate to backend..."))
                                 
-                                success, pdf_url, error = backend_client.generate_pdf_from_json(json_filepath)
+                                success, pdf_url, error = self.backend_client.generate_pdf_from_json(json_filepath)
                                 
-                                if success:
+                                if success and pdf_url:
                                     pdf_success_count += 1
+                                    pdf_filename = os.path.basename(json_filepath).replace('.json', '.pdf')
+                                    pdf_path = os.path.join(CERT_DIR, pdf_filename)
                                     
-                                    # Download PDF locally if URL provided
-                                    if pdf_url:
-                                        pdf_filename = os.path.basename(json_filepath).replace('.json', '.pdf')
-                                        pdf_path = os.path.join(CERT_DIR, pdf_filename)
-                                        
-                                        if backend_client.download_pdf(pdf_url, pdf_path):
-                                            self.after(0, lambda d=device['name']: self.update_cert_status(
-                                                f"✅ PDF downloaded for /dev/{d}"))
-                                        else:
-                                            self.after(0, lambda d=device['name']: self.update_cert_status(
-                                                f"⚠️ PDF generated but download failed for /dev/{d}"))
+                                    if self.backend_client.download_pdf(pdf_url, pdf_path):
+                                        self.after(0, lambda d=device['name']: self.update_cert_status(
+                                            f"✅ PDF downloaded for /dev/{d}"))
                                     else:
                                         self.after(0, lambda d=device['name']: self.update_cert_status(
-                                            f"✅ PDF generated for /dev/{d} (stored in backend)"))
+                                            f"⚠️ PDF generated but download failed for /dev/{d}"))
+                                elif success:
+                                    pdf_success_count += 1
+                                    self.after(0, lambda d=device['name']: self.update_cert_status(
+                                        f"✅ PDF generated for /dev/{d}"))
                                 else:
                                     self.after(0, lambda d=device['name'], e=error: self.update_cert_status(
-                                        f"⚠️ PDF generation failed for /dev/{d}: {e[:50]}"))
+                                        f"⚠️ PDF generation failed for /dev/{d}: {str(e)[:50]}"))
                         else:
                             self.after(0, lambda d=device['name']: self.update_cert_status(
-                                f"⚠️ JSON file not found after generation for /dev/{d}"))
+                                f"⚠️ JSON file not found for /dev/{d}"))
                     else:
                         self.after(0, lambda d=device['name'], e=result.stderr: self.update_cert_status(
                             f"❌ Certificate generation failed for /dev/{d}: {e[:100]}"))
@@ -870,12 +891,16 @@ class CompletionFrame(customtkinter.CTkFrame):
                 self.after(0, lambda d=device['name'], e=str(e): self.update_cert_status(
                     f"❌ Error generating certificate for /dev/{d}: {e[:100]}"))
         
-        # Final status update
-        self.after(0, lambda: self.certificate_generation_complete_with_pdf(
+        # Final status
+        self.after(0, lambda: self.certificate_generation_complete(
             success_count, pdf_success_count, total_devices))
-
-    def certificate_generation_complete_with_pdf(self, json_count, pdf_count, total_devices):
-        """Handle completion of certificate generation with PDF status"""
+        
+        # Refresh certificate viewer
+        if HAS_CERT_VIEWER and hasattr(self, 'cert_viewer'):
+            self.after(0, lambda: self.cert_viewer.refresh_certificate_list())
+    
+    def certificate_generation_complete(self, json_count, pdf_count, total_devices):
+        """Handle completion of certificate generation"""
         self.generate_certs_button.configure(state="normal", text="Generate Certificates")
         
         completion_message = f"\n{'='*50}\nCertificate Generation Complete!\n{'='*50}\n"
@@ -900,63 +925,32 @@ class CompletionFrame(customtkinter.CTkFrame):
         self.cert_textbox.insert("end", completion_message)
         self.cert_textbox.see("end")
         self.cert_textbox.configure(state="disabled")
-        
+    
     def update_cert_status(self, message):
         """Update certificate generation status in UI"""
         self.cert_textbox.configure(state="normal")
         self.cert_textbox.insert("end", f"{message}\n")
         self.cert_textbox.see("end")
         self.cert_textbox.configure(state="disabled")
-        
-    def certificate_generation_complete(self, success_count, total_devices):
-        """Handle completion of certificate generation"""
-        self.generate_certs_button.configure(state="normal", text="Generate Certificates")
-        
-        completion_message = f"\n{'='*50}\nCertificate Generation Complete!\n{'='*50}\n"
-        completion_message += f"Success: {success_count}/{total_devices} certificates generated\n"
-        completion_message += f"Location: {CERT_DIR}\n\n"
-        
-        if success_count == total_devices:
-            completion_message += "All certificates generated successfully! ✅\n"
-        else:
-            completion_message += f"⚠️ {total_devices - success_count} certificates failed to generate.\n"
-            completion_message += "Check that generate_certificate.sh exists and is executable.\n"
-            
-        self.cert_textbox.configure(state="normal")
-        self.cert_textbox.insert("end", completion_message)
-        self.cert_textbox.see("end")
-        self.cert_textbox.configure(state="disabled")
-
-    # In CompletionFrame.__init__, after existing UI setup:
-    def setup_certificate_viewer(self):
-        # Import the viewer module
-        from certificate_viewer_addon import CertificateViewerFrame
-        
-        # Create container for viewer
-        viewer_container = customtkinter.CTkFrame(self)
-        viewer_container.grid(row=3, column=0, padx=20, pady=10, sticky="nsew")
-        self.grid_rowconfigure(3, weight=1)
-        
-        # Add the certificate viewer
-        self.cert_viewer = CertificateViewerFrame(
-            viewer_container, 
-            cert_dir=CERT_DIR
-        )
-        self.cert_viewer.pack(fill="both", expand=True)
-
 
 # --- Entry Point ---
 if __name__ == "__main__":
     if os.geteuid() != 0:
         print("Error: This application requires root privileges.")
-        print("Please run with 'sudo python3 obliterator_gui_fixed.py'")
+        print("Please run with 'sudo python3 obliterator_gui_integrated.py'")
         sys.exit(1)
     else:
-        # Check authentication before starting main app
+        # Check authentication
         if not check_authentication():
             print("Authentication required. Exiting.")
             sys.exit(1)
         
         # Start main application
+        print(f"\n{'='*60}")
+        print(f"Starting {APP_NAME} v{APP_VERSION}")
+        print(f"Backend Integration: {'✅ Available' if HAS_BACKEND_INTEGRATION else '❌ Unavailable'}")
+        print(f"Certificate Viewer: {'✅ Available' if HAS_CERT_VIEWER else '❌ Unavailable'}")
+        print(f"{'='*60}\n")
+        
         app = App()
         app.mainloop()
