@@ -122,11 +122,16 @@ class App(customtkinter.CTk):
         if hasattr(frame, 'on_show'): frame.on_show()
 
     def start_wipe_process(self, devices):
+        """Show confirmation screen - does NOT execute wipe yet"""
+        print(f"DEBUG: start_wipe_process called with {len(devices)} devices")
+        print("DEBUG: Showing ConfirmationFrame (NOT starting wipe)")
         self.devices_to_wipe = devices
         self.frames[ConfirmationFrame].update_device_info(devices)
         self.show_frame(ConfirmationFrame)
 
     def execute_wipe(self):
+        """ACTUALLY start the wipe process - only called after confirmation"""
+        print(f"DEBUG: execute_wipe called - STARTING ACTUAL WIPE of {len(self.devices_to_wipe)} devices")
         self.frames[WipeProgressFrame].start_wipe_queue(self.devices_to_wipe)
         self.show_frame(WipeProgressFrame)
 
@@ -406,7 +411,9 @@ class MainFrame(customtkinter.CTkFrame):
         self.details_textbox.configure(state="disabled")
 
     def confirm_wipe(self):
+        """Navigate to confirmation screen - does NOT start wipe"""
         selected_devices = [info["data"] for path, info in self.device_checkboxes.items() if info["var"].get()]
+        print(f"DEBUG: Moving to confirmation screen for {len(selected_devices)} devices")
         self.controller.start_wipe_process(selected_devices)
 
 class ConfirmationFrame(customtkinter.CTkFrame):
@@ -443,7 +450,12 @@ class ConfirmationFrame(customtkinter.CTkFrame):
         self.check_token(None)
         
     def check_token(self, event):
-        self.confirm_button.configure(state="normal" if self.entry.get() == "OBLITERATE" else "disabled")
+        """Enable confirm button only when 'OBLITERATE' is typed"""
+        is_correct = self.entry.get() == "OBLITERATE"
+        self.confirm_button.configure(state="normal" if is_correct else "disabled")
+        if is_correct:
+            print("DEBUG: Confirmation token 'OBLITERATE' entered - button enabled")
+        return is_correct
 
 class WipeProgressFrame(customtkinter.CTkFrame):
     def __init__(self, parent, controller):
@@ -488,12 +500,22 @@ class WipeProgressFrame(customtkinter.CTkFrame):
         self.log_textbox.configure(state="disabled")
         
     def start_wipe_queue(self, devices):
+        """Initialize the wipe queue - CRITICAL: Only call after user confirmation"""
+        if not devices:
+            print("ERROR: start_wipe_queue called with no devices!")
+            return
+            
+        print(f"DEBUG: start_wipe_queue called with {len(devices)} devices")
+        print("DEBUG: ⚠️ WIPE PROCESS STARTING - THIS SHOULD ONLY HAPPEN AFTER CONFIRMATION")
+        
         self.device_queue = list(devices)
         self.current_device_index, self.total_devices = 0, len(devices)
         self.wiped_devices = []
         self.log_textbox.configure(state="normal")
         self.log_textbox.delete("1.0", "end")
         self.log_textbox.configure(state="disabled")
+        
+        self.log(f"⚠️ WIPE PROCESS INITIALIZED - {len(devices)} device(s) queued")
         self.process_next_in_queue()
         
     def process_next_in_queue(self):
