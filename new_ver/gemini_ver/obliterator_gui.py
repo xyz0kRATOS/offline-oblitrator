@@ -486,8 +486,7 @@ class WipeProgressFrame(customtkinter.CTkFrame):
         info_frame.grid_columnconfigure((0, 1, 2), weight=1)
         self.time_label = customtkinter.CTkLabel(info_frame, text="Elapsed: 00:00:00", font=FONT_MONO)
         self.time_label.grid(row=0, column=0, sticky="w")
-        self.data_label = customtkinter.CTkLabel(info_frame, text="Wiped: 0.00 / 0.00 GiB", font=FONT_MONO)
-        self.data_label.grid(row=0, column=1)
+
         
         self.log_textbox = CustomTextbox(center_frame, height=250, width=600, state="disabled", 
                                        font=FONT_MONO, scrollbar_button_color="#FFD700")
@@ -528,8 +527,6 @@ class WipeProgressFrame(customtkinter.CTkFrame):
         self.current_device_index += 1
         device_data = self.device_queue.pop(0)
         scraped_info = self.controller.frames[MainFrame].get_drive_details(f"/dev/{device_data['name']}")
-        self.current_device_total_size = scraped_info.get('size_bytes', 0)
-        self.data_label.configure(text=f"Wiped: 0.00 / {self.bytes_to_gib_str(self.current_device_total_size)}")
         self.progress_bar.set(0)
         self.overall_title_label.configure(text=f"Processing Drive {self.current_device_index} of {self.total_devices}")
         self.title_label.configure(text=f"Wiping /dev/{device_data['name']} ({device_data['size']})")
