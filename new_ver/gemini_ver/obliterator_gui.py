@@ -883,86 +883,164 @@ class CompletionFrame(customtkinter.CTkFrame):
         pdf_success_count = 0
         total_devices = len(self.wiped_devices)
         
+        # Ensure certificate directory exists
+        os.makedirs(CERT_DIR, exist_ok=True)
+        
         for i, device in enumerate(self.wiped_devices, 1):
             device_path = f"/dev/{device['name']}"
             serial_number = device['serial_number']
             
             self.after(0, lambda d=device['name'], i=i, t=total_devices: self.update_cert_status(
-                f"Generating certificate {i}/{t} for /dev/{d}..."))
+                f"\n[{i}/{t}] Generating certificate for /dev/{d}..."))
             
             try:
                 # Generate JSON certificate
-                if os.path.exists(CERT_GENERATOR_PATH) and os.access(CERT_GENERATOR_PATH, os.X_OK):
-                    result = subprocess.run([
-                        'bash', CERT_GENERATOR_PATH, 
-                        device_path, 
-                        serial_number, 
-                        'Success',
-                        APP_NAME,
-                        APP_VERSION
-                    ], capture_output=True, text=True, timeout=30)
+                if not os.path.exists(CERT_GENERATOR_PATH):
+                    self.after(0, lambda: self.update_cert_status(
+                        f"❌ ERROR: Certificate generator not found at: {CERT_GENERATOR_PATH}"))
+                    continue
                     
-                    if result.returncode == 0:
-                        success_count += 1
-                        
-                        # Extract JSON filepath
-                        output_lines = result.stdout.split('\n')
-                        json_filepath = None
-                        for line in output_lines:
-                            if line.startswith("File:"):
-                                json_filepath = line.replace("File:", "").strip()
+                if not os.access(CERT_GENERATOR_PATH, os.X_OK):
+                    self.after(0, lambda: self.update_cert_status(
+                        f"❌ ERROR: Certificate generator not executable: {CERT_GENERATOR_PATH}"))
+                    continue
+                
+                # Log the exact command being run
+                cmd = ['bash', CERT_GENERATOR_PATH, device_path, serial_number, 
+                       'Success', APP_NAME, APP_VERSION]
+                self.after(0, lambda c=cmd: self.update_cert_status(
+                    f"DEBUG: Running command: {' '.join(c)}"))
+                
+                # Run with better error capture
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True, 
+                    text=True, 
+                    timeout=30,
+                    cwd=SCRIPT_DIR  # Important: run in script directory
+                )
+                
+                # Log all output for debugging
+                if result.stdout:
+                    self.after(0, lambda out=result.stdout: self.update_cert_status(
+                        f"DEBUG: Script stdout:\n{out}"))
+                
+                if result.stderr:
+                    self.after(0, lambda err=result.stderr: self.update_cert_status(
+                        f"DEBUG: Script stderr:\n{err}"))
+                
+                if result.returncode != 0:
+                    self.after(0, lambda rc=result.returncode, err=result.stderr: self.update_cert_status(
+                        f"❌ Certificate generation failed (exit code {rc})\n{err[:200]}"))
+                    continue
+                
+                # Try multiple methods to find the JSON file
+                json_filepath = None
+                
+                # Method 1: Parse from stdout
+                output_lines = result.stdout.split('\n')
+                for line in output_lines:
+                    if 'File:' in line or 'Certificate saved to:' in line or '.json' in line:
+                        # Extract filepath from various possible formats
+                        parts = line.split(':', 1)
+                        if len(parts) > 1:
+                            potential_path = parts[1].strip()
+                            if os.path.exists(potential_path):
+                                json_filepath = potential_path
                                 break
+                
+                # Method 2: Look for recently created files in cert directory
+                if not json_filepath:
+                    self.after(0, lambda: self.update_cert_status(
+                        "DEBUG: Searching for recently created JSON files..."))
+                    
+                    # Wait a moment for file system to sync
+                    time.sleep(0.5)
+                    
+                    # Find .json files modified in last 10 seconds
+                    recent_files = []
+                    try:
+                        for filename in os.listdir(CERT_DIR):
+                            if filename.endswith('.json'):
+                                filepath = os.path.join(CERT_DIR, filename)
+                                if os.path.getmtime(filepath) > (time.time() - 10):
+                                    # Check if this file contains our serial number
+                                    try:
+                                        with open(filepath, 'r') as f:
+                                            content = json.load(f)
+                                            if content.get('serial_number') == serial_number:
+                                                recent_files.append(filepath)
+                                    except:
+                                        pass
                         
-                        if not json_filepath:
-                            timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-                            json_filename = f"wipe-{timestamp}-{serial_number}.json"
-                            json_filepath = os.path.join(CERT_DIR, json_filename)
+                        if recent_files:
+                            json_filepath = recent_files[0]  # Use most recent match
+                            self.after(0, lambda p=json_filepath: self.update_cert_status(
+                                f"DEBUG: Found JSON file: {p}"))
+                    except Exception as e:
+                        self.after(0, lambda e=str(e): self.update_cert_status(
+                            f"DEBUG: Error searching for files: {e}"))
+                
+                # Method 3: Construct expected filename
+                if not json_filepath:
+                    self.after(0, lambda: self.update_cert_status(
+                        "DEBUG: Using fallback filename construction..."))
+                    timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+                    json_filename = f"wipe-{timestamp}-{serial_number}.json"
+                    json_filepath = os.path.join(CERT_DIR, json_filename)
+                
+                # Verify file exists and is valid
+                if os.path.exists(json_filepath):
+                    try:
+                        with open(json_filepath, 'r') as f:
+                            cert_data = json.load(f)
                         
-                        if os.path.exists(json_filepath):
+                        success_count += 1
+                        self.after(0, lambda d=device['name'], p=json_filepath: self.update_cert_status(
+                            f"✅ JSON certificate generated for /dev/{d}\n   File: {p}"))
+                        
+                        # Try PDF generation if backend available
+                        if self.backend_client:
                             self.after(0, lambda d=device['name']: self.update_cert_status(
-                                f"✅ JSON certificate generated for /dev/{d}"))
+                                f"📤 Sending /dev/{d} certificate to backend..."))
                             
-                            # Try PDF generation if backend available
-                            if self.backend_client:
-                                self.after(0, lambda d=device['name']: self.update_cert_status(
-                                    f"📤 Sending /dev/{d} certificate to backend..."))
+                            success_pdf, pdf_url, error = self.backend_client.generate_pdf_from_json(json_filepath)
+                            
+                            if success_pdf and pdf_url:
+                                pdf_success_count += 1
+                                pdf_filename = os.path.basename(json_filepath).replace('.json', '.pdf')
+                                pdf_path = os.path.join(CERT_DIR, pdf_filename)
                                 
-                                success, pdf_url, error = self.backend_client.generate_pdf_from_json(json_filepath)
-                                
-                                if success and pdf_url:
-                                    pdf_success_count += 1
-                                    pdf_filename = os.path.basename(json_filepath).replace('.json', '.pdf')
-                                    pdf_path = os.path.join(CERT_DIR, pdf_filename)
-                                    
-                                    if self.backend_client.download_pdf(pdf_url, pdf_path):
-                                        self.after(0, lambda d=device['name']: self.update_cert_status(
-                                            f"✅ PDF downloaded for /dev/{d}"))
-                                    else:
-                                        self.after(0, lambda d=device['name']: self.update_cert_status(
-                                            f"⚠️ PDF generated but download failed for /dev/{d}"))
-                                elif success:
-                                    pdf_success_count += 1
+                                if self.backend_client.download_pdf(pdf_url, pdf_path):
                                     self.after(0, lambda d=device['name']: self.update_cert_status(
-                                        f"✅ PDF generated for /dev/{d}"))
+                                        f"✅ PDF downloaded for /dev/{d}"))
                                 else:
-                                    self.after(0, lambda d=device['name'], e=error: self.update_cert_status(
-                                        f"⚠️ PDF generation failed for /dev/{d}: {str(e)[:50]}"))
-                        else:
-                            self.after(0, lambda d=device['name']: self.update_cert_status(
-                                f"⚠️ JSON file not found for /dev/{d}"))
-                    else:
-                        self.after(0, lambda d=device['name'], e=result.stderr: self.update_cert_status(
-                            f"❌ Certificate generation failed for /dev/{d}: {e[:100]}"))
+                                    self.after(0, lambda d=device['name']: self.update_cert_status(
+                                        f"⚠️ PDF generated but download failed for /dev/{d}"))
+                            elif success_pdf:
+                                pdf_success_count += 1
+                                self.after(0, lambda d=device['name']: self.update_cert_status(
+                                    f"✅ PDF generated for /dev/{d}"))
+                            else:
+                                self.after(0, lambda d=device['name'], e=error: self.update_cert_status(
+                                    f"⚠️ PDF generation failed for /dev/{d}: {str(e)[:100]}"))
+                                
+                    except json.JSONDecodeError as e:
+                        self.after(0, lambda d=device['name'], e=str(e): self.update_cert_status(
+                            f"⚠️ JSON file created but invalid for /dev/{d}: {e}"))
                 else:
-                    self.after(0, lambda d=device['name']: self.update_cert_status(
-                        f"⚠️ Certificate generator not found for /dev/{d}"))
+                    self.after(0, lambda d=device['name'], p=json_filepath: self.update_cert_status(
+                        f"❌ JSON file not found for /dev/{d}\n   Expected: {p}\n   Directory contents: {os.listdir(CERT_DIR) if os.path.exists(CERT_DIR) else 'DIR NOT FOUND'}"))
                         
             except subprocess.TimeoutExpired:
                 self.after(0, lambda d=device['name']: self.update_cert_status(
                     f"❌ Certificate generation timed out for /dev/{d}"))
             except Exception as e:
                 self.after(0, lambda d=device['name'], e=str(e): self.update_cert_status(
-                    f"❌ Error generating certificate for /dev/{d}: {e[:100]}"))
+                    f"❌ Unexpected error for /dev/{d}: {e}"))
+                import traceback
+                self.after(0, lambda tb=traceback.format_exc(): self.update_cert_status(
+                    f"DEBUG: Traceback:\n{tb}"))
         
         # Final status
         self.after(0, lambda: self.certificate_generation_complete(
